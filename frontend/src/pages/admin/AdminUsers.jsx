@@ -1,0 +1,132 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { FaEye, FaSearch } from "react-icons/fa";
+import Header from "../../components/Header";
+
+export default function AdminUsers() {
+  const navigate = useNavigate();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+    useEffect(() => {
+        fetch("http://localhost:5000/api/admin/users")
+        .then((res) => res.json())
+        .then((data) => {
+            setUsers(Array.isArray(data) ? data : []);
+            setLoading(false);
+        })
+        .catch((err) => {
+            console.error(err);
+            setUsers([]);
+            setLoading(false);
+        });
+    }, []);
+
+  const filteredUsers = users.filter(
+    (u) =>
+      u.name.toLowerCase().includes(search.toLowerCase()) ||
+      u.email.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <>
+      <style>{`
+        .table-classic th {
+          font-weight: 600;
+          font-size: 0.875rem;
+          color: #6B7280;
+          background: #F9FAFB;
+        }
+        .table-classic th:first-child { border-top-left-radius: 16px; }
+        .table-classic th:last-child { border-top-right-radius: 16px; }
+        .table-classic tr:last-child td:first-child { border-bottom-left-radius: 16px; }
+        .table-classic tr:last-child td:last-child { border-bottom-right-radius: 16px; }
+      `}</style>
+
+      <Header />
+
+      <div className="mb-6">
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 flex items-center gap-2">
+          Utilisateurs
+        </h2>
+        <p className="text-sm text-gray-500 mt-1">
+          Consultez et gérez tous les utilisateurs de la plateforme.
+        </p>
+      </div>
+
+      {/* Barre de recherche */}
+      <div className="relative w-full sm:w-64 mb-4">
+        <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
+        <input
+          type="text"
+          placeholder="Rechercher un utilisateur..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-white outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
+        />
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin h-8 w-8 border-4 border-purple-600 border-t-transparent rounded-full" />
+        </div>
+      ) : (
+        <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm table-classic">
+              <thead>
+                <tr>
+                  <th className="px-4 py-3 text-left">Nom</th>
+                  <th className="px-4 py-3 text-left">Email</th>
+                  <th className="px-4 py-3 text-left">Date d'inscription</th>
+                  <th className="px-4 py-3 text-left">Progression</th>
+                  <th className="px-4 py-3 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredUsers.map((user) => (
+                  <tr key={user.firebase_uid} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3 font-medium text-gray-900">{user.name}</td>
+                    <td className="px-4 py-3 text-gray-600">{user.email}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {new Date(user.created_at).toLocaleDateString("fr-FR")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 bg-gray-100 rounded-full h-2">
+                          <div
+                            className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full"
+                            style={{ width: `${user.completed || 0}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-600">{user.completed || 0}%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => navigate(`/admin/users/${user.firebase_uid}/progress`)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition shadow-sm"
+                      >
+                        <FaEye className="text-xs" /> Détails
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {filteredUsers.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="text-center py-12 text-gray-500">
+                      <FaSearch className="mx-auto text-3xl mb-3" />
+                      <p className="font-medium">Aucun utilisateur trouvé</p>
+                      <p className="text-sm">Essayez un autre terme de recherche.</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

@@ -42,5 +42,22 @@ router.get("/:id", (req, res) => {
         res.json(course);
     });
 });
+// GET /api/courses/user/:uid – cours avec progression
+router.get("/user/:uid", (req, res) => {
+    const { uid } = req.params;
+    const sql = `
+        SELECT c.id, c.title, c.category_id, c.level, c.duration,
+               c.description, c.media, c.quiz_link,
+               up.progress, up.last_watched_at
+        FROM user_progress up
+        JOIN courses c ON c.id = up.course_id
+        WHERE up.firebase_uid = ?
+        ORDER BY up.last_watched_at DESC
+    `;
+    db.all(sql, [uid], (err, rows) => {
+        if (err) return res.status(500).json({ message: err.message });
+        res.json(rows || []);
+    });
+});
 
 module.exports = router;

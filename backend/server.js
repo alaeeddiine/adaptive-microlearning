@@ -11,7 +11,8 @@ const notificationsRoute = require("./routes/notifications");
 const recommendationsRoute = require("./routes/recommendations");
 const sessionRoute = require("./routes/session");
 const activityRoute = require("./routes/activity");
-
+const analyticsRoute = require("./routes/analytics");
+const arcsRoute = require("./routes/arcs");
 
 const app = express();
 
@@ -26,8 +27,8 @@ app.use("/api/notifications", notificationsRoute);
 app.use("/api/recommendations", recommendationsRoute);
 app.use("/api/session", sessionRoute);
 app.use("/api/activity", activityRoute);
-
-
+app.use("/api/analytics", analyticsRoute);
+app.use("/api/arcs", arcsRoute);
 
 app.listen(5000, () => {
     console.log("Server running");

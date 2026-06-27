@@ -17,6 +17,7 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminCourses from "./pages/admin/AdminCourses";
 import AdminUserProgress from "./pages/admin/AdminUserProgress";
+import ProgressManager from "./pages/admin/ProgressManager";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
@@ -159,6 +160,7 @@ export default function App() {
                 )
               }
             />
+            <Route path="/admin/progress" element={<ProgressManager />} />
           </Route>
         </Route>
       </Route>

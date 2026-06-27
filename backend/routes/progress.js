@@ -25,22 +25,31 @@ function computeProgress(segments, totalDuration) {
 
 function parseDuration(dur) {
     if (!dur) return 0;
-    let seconds = 0;
+    // If already a number, assume minutes and convert to seconds
+    if (typeof dur === "number") return dur * 60;
+    dur = dur.toString().trim();
+
+    // Try "Xh Ym" format
     const hourMatch = dur.match(/(\d+)\s*h/i);
     const minMatch = dur.match(/(\d+)\s*m/i);
-    if (hourMatch) seconds += parseInt(hourMatch[1]) * 3600;
-    if (minMatch) seconds += parseInt(minMatch[1]) * 60;
-    if (seconds === 0) {
-        const parts = dur.split(":").map(Number);
-        if (parts.length === 3) seconds = parts[0]*3600 + parts[1]*60 + parts[2];
-        else if (parts.length === 2) seconds = parts[0]*60 + parts[1];
-        else {
-            // Try parsing as just minutes (e.g., "2" or "2.5")
-            const num = parseFloat(dur);
-            if (!isNaN(num)) seconds = num * 60;
-        }
+    if (hourMatch || minMatch) {
+        let seconds = 0;
+        if (hourMatch) seconds += parseInt(hourMatch[1]) * 3600;
+        if (minMatch) seconds += parseInt(minMatch[1]) * 60;
+        return seconds;
     }
-    return seconds;
+
+    // Try HH:MM:SS or MM:SS
+    const parts = dur.split(":").map(Number);
+    if (parts.length === 3) {
+        return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 2) {
+        return parts[0] * 60 + parts[1];
+    }
+    // If nothing works, try parsing as a float (minutes)
+    const floatVal = parseFloat(dur);
+    if (!isNaN(floatVal)) return Math.round(floatVal * 60);
+    return 0;
 }
 
 router.post("/", (req, res) => {
@@ -89,16 +98,46 @@ router.get("/:uid/:courseId", (req, res) => {
 
 router.get("/stats/:uid", (req, res) => {
     const { uid } = req.params;
+
     db.all("SELECT progress, watched_segments FROM user_progress WHERE firebase_uid = ?", [uid], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) {
+            return res.json({
+                avgProgress: 0,
+                totalWatchTime: "0m",
+                completedCourses: 0,
+                badges: 0,
+                courseCount: 0,
+            });
+        }
+
+        let totalSeconds = 0;
         let totalProgress = 0;
         let completedCourses = 0;
+        const courseCount = rows.length;
+
         rows.forEach(row => {
             totalProgress += row.progress || 0;
             if (row.progress >= 100) completedCourses++;
+            try {
+                const segments = JSON.parse(row.watched_segments || "[]");
+                totalSeconds += mergeAndSum(segments);
+            } catch (e) {
+                console.error("Parsing segments failed:", e);
+            }
         });
-        const avgProgress = rows.length > 0 ? Math.round(totalProgress / rows.length) : 0;
-        res.json({ avgProgress, completedCourses, courseCount: rows.length });
+
+        const avgProgress = courseCount > 0 ? Math.round(totalProgress / courseCount) : 0;
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const formattedTime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+        res.json({
+            avgProgress,
+            totalWatchTime: formattedTime,
+            completedCourses,
+            badges: 0,
+            courseCount,
+        });
     });
 });
 

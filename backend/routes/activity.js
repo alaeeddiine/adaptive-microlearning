@@ -18,5 +18,34 @@ router.post("/", (req, res) => {
         res.json({ id: this.lastID });
     });
 });
+router.get("/user/:uid", (req, res) => {
+    const { uid } = req.params;
+    db.all("SELECT * FROM user_activity WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 10", [uid], (err, rows) => {
+        if (err) return res.status(500).json({ message: err.message });
+        res.json(rows || []);
+    });
+});
+router.get("/weekly/:uid", (req, res) => {
+    const { uid } = req.params;
+    const sql = `
+        SELECT date(created_at) as day, COUNT(*) as count
+        FROM user_activity
+        WHERE firebase_uid = ? AND created_at >= date('now', '-6 days')
+        GROUP BY day
+        ORDER BY day
+    `;
+    db.all(sql, [uid], (err, rows) => {
+        if (err) return res.status(500).json({ message: err.message });
+        const days = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const dateStr = d.toISOString().split("T")[0];
+            const row = rows.find(r => r.day === dateStr);
+            days.push(row ? row.count : 0);
+        }
+        res.json(days);
+    });
+});
 
 module.exports = router;

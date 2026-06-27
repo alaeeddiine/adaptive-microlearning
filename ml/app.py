@@ -4,7 +4,7 @@ from joblib import load
 
 app = Flask(__name__)
 
-# Load with joblib
+# Charger le modèle et les colonnes d’entraînement avec joblib
 model = load("recommendation_model.pkl")
 training_columns = load("training_columns.pkl")
 
@@ -17,14 +17,20 @@ def predict():
     features = data["features"]
     df = pd.DataFrame([features])
 
-    # One‑hot encode categorical columns (adjust list if needed)
-    categorical_cols = ["age", "education", "mastery", "competence", 
-                    "time_available", "connection_level", "device_type", 
-                    "battery_level", "time_of_day"]
+    # Colonnes catégorielles possibles
+    possible_categorical = [
+        "age", "education", "mastery", "competence",
+        "time_available", "connection_level", "device_type",
+        "battery_level", "time_of_day"
+    ]
+
+    # Ne garder que celles présentes dans les données reçues
+    categorical_cols = [c for c in possible_categorical if c in df.columns]
+
     if categorical_cols:
         df = pd.get_dummies(df, columns=categorical_cols)
 
-    # Ensure all training columns exist
+    # Aligner avec les colonnes d’entraînement
     for col in training_columns:
         if col not in df.columns:
             df[col] = 0

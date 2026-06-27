@@ -33,6 +33,7 @@ const adminNavItems = [
   { to: "/admin", icon: FaShieldAlt, label: "Dashboard admin" },
   { to: "/admin/users", icon: FaUsers, label: "Utilisateurs" },
   { to: "/admin/courses", icon: FaBook, label: "Cours" },
+  { to: "/admin/progress", icon: FaChartBar, label: "Progression" },
 ];
 
 // ----- Mobile bottom nav – default user -----
@@ -48,6 +49,7 @@ const adminQuickNav = [
   { to: "/admin", icon: FaShieldAlt, label: "Admin" },
   { to: "/admin/users", icon: FaUsers, label: "Utilisateurs" },
   { to: "/admin/courses", icon: FaBook, label: "Cours" },
+  { to: "/admin/progress", icon: FaChartBar, label: "Progression" },
 ];
 
 // ----- Desktop Sidebar -----

@@ -1,30 +1,46 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../database/database");
-const fetch = require("node-fetch"); // npm install node-fetch
+const fetch = require("node-fetch");
 
+// POST /api/recommendations
 router.post("/", async (req, res) => {
     const { firebase_uid } = req.body;
     if (!firebase_uid) return res.status(400).json({ message: "firebase_uid requis" });
 
-    // 1. Get user's questionnaire & stats from SQLite
-    db.get(
-        `SELECT u.*, 
-                (SELECT AVG(progress) FROM user_progress up WHERE up.firebase_uid = u.firebase_uid) AS avg_progress
-         FROM users u WHERE u.firebase_uid = ?`,
-        [firebase_uid],
-        async (err, user) => {
-            if (err) return res.status(500).json({ message: err.message });
-            if (!user) return res.status(404).json({ message: "Utilisateur non trouvé" });
+    // Récupérer le groupe A/B de l'utilisateur
+    db.get("SELECT ab_group FROM users WHERE firebase_uid = ?", [firebase_uid], async (err, user) => {
+        if (err) return res.status(500).json({ message: err.message });
+        if (!user) return res.status(404).json({ message: "Utilisateur non trouvé" });
 
-            // 2. Build feature vector (must match the training columns)
+        const abGroup = user.ab_group || "A";
+
+        // ---------- GROUPE B : tout le contenu, sans personnalisation ----------
+        if (abGroup === "B") {
+            db.all(
+                `SELECT c.*, cat.name AS category_name
+                 FROM courses c
+                 LEFT JOIN categories cat ON c.category_id = cat.id
+                 ORDER BY cat.name, c.title`,
+                (err, courses) => {
+                    if (err) return res.status(500).json({ message: err.message });
+                    return res.json(courses || []);
+                }
+            );
+            return;
+        }
+
+        // ---------- GROUPE A : recommandation personnalisée ----------
+        db.get("SELECT * FROM users WHERE firebase_uid = ?", [firebase_uid], async (err, userProfile) => {
+            if (err) return res.status(500).json({ message: err.message });
+            if (!userProfile) return res.status(404).json({ message: "Profil non trouvé" });
+
+            // Features de base (questionnaire)
             const features = {
-                age: user.age || "21-30",
-                education: user.education || "Université",
-                mastery: user.mastery || "Intermédiaire",
-                competence: user.competence || "Intermédiaire",
-                avg_progress: user.avg_progress || 0,
-                // add any other features your model requires
+                age: userProfile.age || "21-30",
+                education: userProfile.education || "Université",
+                mastery: userProfile.mastery || "Intermédiaire",
+                competence: userProfile.competence || "Intermédiaire",
             };
 
             try {
@@ -34,30 +50,40 @@ router.post("/", async (req, res) => {
                     body: JSON.stringify({ features }),
                 });
                 const result = await flaskResponse.json();
-                if (result.error) return res.status(500).json({ message: result.error });
+                if (result.error) {
+                    // Erreur du modèle → on renvoie un tableau vide (aucune reco)
+                    return res.json([]);
+                }
 
-                const recommendedIds = result.recommendations; // array of course IDs
+                // Le modèle renvoie un tableau avec un seul type (ex: ["Vidéo"])
+                const recommendations = result.recommendations;
+                if (!recommendations || recommendations.length === 0) {
+                    return res.json([]);
+                }
 
-                // 3. Fetch those courses from the database
-                if (!recommendedIds.length) return res.json([]);
-                const placeholders = recommendedIds.map(() => "?").join(",");
+                const contentType = Array.isArray(recommendations) ? recommendations[0] : recommendations;
+
+                // Chercher tous les cours dont le titre ou la description contient ce type
+                const likePattern = `%${contentType}%`;
                 db.all(
                     `SELECT c.*, cat.name AS category_name
                      FROM courses c
                      LEFT JOIN categories cat ON c.category_id = cat.id
-                     WHERE c.id IN (${placeholders})`,
-                    recommendedIds,
+                     WHERE c.title LIKE ? OR c.description LIKE ?
+                     ORDER BY cat.name, c.title`,
+                    [likePattern, likePattern],
                     (err, courses) => {
                         if (err) return res.status(500).json({ message: err.message });
+                        // Renvoyer uniquement les cours correspondants (même vide)
                         res.json(courses || []);
                     }
                 );
             } catch (err) {
-                console.error("Flask service error:", err);
+                console.error("Flask error:", err);
                 res.status(500).json({ message: "Erreur du service de recommandation" });
             }
-        }
-    );
+        });
+    });
 });
 
 module.exports = router;

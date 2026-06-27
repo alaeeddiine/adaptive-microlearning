@@ -13,83 +13,61 @@ const db = new sqlite3.Database(DB_FILE, (err) => {
     }
 });
 
-db.run(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'`, (err) => {
-    if (err && !err.message.includes("duplicate column name")) {
-        console.error("Erreur ajout colonne role:", err.message);
-    }
-});
-
-// Création de la table users (inchangé)
+// ----------------------------------------------------------------------
+// 1. USERS (principale)
+// ----------------------------------------------------------------------
 db.run(`
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         firebase_uid TEXT UNIQUE NOT NULL,
         name TEXT NOT NULL,
         email TEXT NOT NULL,
+        role TEXT DEFAULT 'user',
+        ab_group TEXT,
+        age TEXT,
+        education TEXT,
+        mastery TEXT,
+        competence TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
 `, (err) => {
     if (err) console.error("Erreur création table users :", err.message);
     else console.log("Table 'users' prête.");
 });
-db.run(`
-    CREATE TABLE IF NOT EXISTS notifications (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        firebase_uid TEXT NOT NULL,
-        message TEXT NOT NULL,
-        read INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid)
-    )
-`);
-db.run(`ALTER TABLE notifications ADD COLUMN type TEXT DEFAULT 'info'`, (err) => {
-    if (err && !err.message.includes("duplicate column name")) {
-        console.error("Erreur ajout colonne type:", err.message);
-    }
-});
-db.run(`
-    CREATE TABLE IF NOT EXISTS courses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        firebase_uid TEXT,
-        title TEXT NOT NULL,
-        category TEXT,
-        level TEXT,
-        duration TEXT,
-        progress INTEGER DEFAULT 0,
-        completed INTEGER DEFAULT 0,
-        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid)
-    )
-`);
 
-db.run(`
-    CREATE TABLE IF NOT EXISTS courses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        firebase_uid TEXT,
-        title TEXT,
-        category TEXT,
-        level TEXT,
-        duration TEXT,
-        progress INTEGER DEFAULT 0,
-        completed INTEGER DEFAULT 0,
-        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid)
-    )
-`);
-// Add firebase_uid column if missing (safe to run multiple times)
-db.run(`ALTER TABLE courses ADD COLUMN firebase_uid TEXT`, (err) => {
-    if (err && !err.message.includes("duplicate column name")) {
-        console.error("Error adding firebase_uid to courses:", err.message);
-    }
+// Ajout de colonnes manquantes (sécurisé, exécutable plusieurs fois)
+const userColumns = [
+    { name: "role", type: "TEXT DEFAULT 'user'" },
+    { name: "ab_group", type: "TEXT" },
+    { name: "age", type: "TEXT" },
+    { name: "education", type: "TEXT" },
+    { name: "mastery", type: "TEXT" },
+    { name: "competence", type: "TEXT" },
+];
+userColumns.forEach((col) => {
+    db.run(`ALTER TABLE users ADD COLUMN ${col.name} ${col.type}`, (err) => {
+        if (err && !err.message.includes("duplicate column name")) {
+            console.error(`Erreur ajout colonne ${col.name} dans users:`, err.message);
+        }
+    });
 });
 
-// Table categories
+// ----------------------------------------------------------------------
+// 2. CATEGORIES
+// ----------------------------------------------------------------------
 db.run(`
     CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL
     )
-`);
+`, (err) => {
+    if (err) console.error("Erreur création table categories :", err.message);
+    else console.log("Table 'categories' prête.");
+});
 
-// Table courses avec category_id
+// ----------------------------------------------------------------------
+// 3. COURSES (liée aux catégories)
+// ----------------------------------------------------------------------
 db.run(`
     CREATE TABLE IF NOT EXISTS courses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,56 +76,90 @@ db.run(`
         category_id INTEGER,
         level TEXT,
         duration TEXT,
+        description TEXT,
+        media TEXT,
+        quiz_link TEXT,
         progress INTEGER DEFAULT 0,
         completed INTEGER DEFAULT 0,
         FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid),
         FOREIGN KEY (category_id) REFERENCES categories(id)
     )
-`);
-// Add new columns for richer course data (safe to run multiple times)
-const newCourseColumns = [
-  { name: "description", type: "TEXT" },
-  { name: "media", type: "TEXT" },            // URL to video/audio
-  { name: "quiz_link", type: "TEXT" },        // optional quiz link
+`, (err) => {
+    if (err) console.error("Erreur création table courses :", err.message);
+    else console.log("Table 'courses' prête.");
+});
+
+// Colonnes additionnelles (si la table existait avant)
+const courseColumns = [
+    { name: "firebase_uid", type: "TEXT" },
+    { name: "category_id", type: "INTEGER" },
+    { name: "description", type: "TEXT" },
+    { name: "media", type: "TEXT" },
+    { name: "quiz_link", type: "TEXT" },
+    { name: "level", type: "TEXT" },
+    { name: "duration", type: "TEXT" },
 ];
-
-newCourseColumns.forEach(col => {
-  db.run(`ALTER TABLE courses ADD COLUMN ${col.name} ${col.type}`, (err) => {
-    if (err && !err.message.includes("duplicate column name")) {
-      console.error(`Erreur ajout colonne ${col.name} dans courses:`, err.message);
-    }
-  });
+courseColumns.forEach((col) => {
+    db.run(`ALTER TABLE courses ADD COLUMN ${col.name} ${col.type}`, (err) => {
+        if (err && !err.message.includes("duplicate column name")) {
+            console.error(`Erreur ajout colonne ${col.name} dans courses:`, err.message);
+        }
+    });
 });
 
-// Migration pour ajouter category_id si la table courses existait déjà sans
-db.run(`ALTER TABLE courses ADD COLUMN category_id INTEGER`, (err) => {
-    if (err && !err.message.includes("duplicate column name")) {
-        console.error("Erreur ajout category_id :", err.message);
-    }
-});
-
+// ----------------------------------------------------------------------
+// 4. USER_PROGRESS (suivi des cours par utilisateur)
+// ----------------------------------------------------------------------
 db.run(`
     CREATE TABLE IF NOT EXISTS user_progress (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         firebase_uid TEXT NOT NULL,
         course_id INTEGER NOT NULL,
         progress REAL DEFAULT 0,
+        watched_segments TEXT DEFAULT '[]',
         last_watched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid),
         FOREIGN KEY (course_id) REFERENCES courses(id),
         UNIQUE(firebase_uid, course_id)
     )
-`);
+`, (err) => {
+    if (err) console.error("Erreur création table user_progress :", err.message);
+    else console.log("Table 'user_progress' prête.");
+});
+
 db.run(`ALTER TABLE user_progress ADD COLUMN watched_segments TEXT DEFAULT '[]'`, (err) => {
     if (err && !err.message.includes("duplicate column name")) {
         console.error("Erreur ajout colonne watched_segments:", err.message);
     }
 });
-db.run(`ALTER TABLE users ADD COLUMN ab_group TEXT`, (err) => {
+
+// ----------------------------------------------------------------------
+// 5. NOTIFICATIONS
+// ----------------------------------------------------------------------
+db.run(`
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firebase_uid TEXT NOT NULL,
+        message TEXT NOT NULL,
+        type TEXT DEFAULT 'info',
+        read INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid)
+    )
+`, (err) => {
+    if (err) console.error("Erreur création table notifications :", err.message);
+    else console.log("Table 'notifications' prête.");
+});
+
+db.run(`ALTER TABLE notifications ADD COLUMN type TEXT DEFAULT 'info'`, (err) => {
     if (err && !err.message.includes("duplicate column name")) {
-        console.error("Erreur ajout colonne ab_group:", err.message);
+        console.error("Erreur ajout colonne type dans notifications:", err.message);
     }
 });
+
+// ----------------------------------------------------------------------
+// 6. SESSION_CONTEXT (contextes de session)
+// ----------------------------------------------------------------------
 db.run(`
     CREATE TABLE IF NOT EXISTS session_context (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,7 +172,14 @@ db.run(`
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid)
     )
-`);
+`, (err) => {
+    if (err) console.error("Erreur création table session_context :", err.message);
+    else console.log("Table 'session_context' prête.");
+});
+
+// ----------------------------------------------------------------------
+// 7. USER_ACTIVITY (logging fin des interactions)
+// ----------------------------------------------------------------------
 db.run(`
     CREATE TABLE IF NOT EXISTS user_activity (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,36 +189,32 @@ db.run(`
         event_data TEXT,
         ab_group TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-`);
-// Ajout des colonnes questionnaire (si elles n'existent pas déjà)
-const newColumns = [
-    { name: "age", type: "TEXT" },
-    { name: "education", type: "TEXT" },
-    { name: "mastery", type: "TEXT" },
-    { name: "competence", type: "TEXT" },
-];
-
-newColumns.forEach((col) => {
-    db.run(`ALTER TABLE users ADD COLUMN ${col.name} ${col.type}`, (err) => {
-        if (err && !err.message.includes("duplicate column name")) {
-            console.error(`Erreur ajout colonne ${col.name} :`, err.message);
-        }
-    });
+    )
+`, (err) => {
+    if (err) console.error("Erreur création table user_activity :", err.message);
+    else console.log("Table 'user_activity' prête.");
 });
-// Add missing columns if they don't exist yet
-const courseColumns = [
-  { name: "level", type: "TEXT" },
-  { name: "duration", type: "TEXT" },
-  { name: "category", type: "TEXT" },   // in case you still have it
-  { name: "category_id", type: "INTEGER" },
-];
-courseColumns.forEach(col => {
-  db.run(`ALTER TABLE courses ADD COLUMN ${col.name} ${col.type}`, (err) => {
-    if (err && !err.message.includes("duplicate column name")) {
-      console.error(`Erreur ajout colonne ${col.name} dans courses:`, err.message);
-    }
-  });
+
+// ----------------------------------------------------------------------
+// 8. ARCS_RESPONSES (motivation)
+// ----------------------------------------------------------------------
+db.run(`
+    CREATE TABLE IF NOT EXISTS arcs_responses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firebase_uid TEXT NOT NULL,
+        course_id INTEGER,
+        attention INTEGER,
+        relevance INTEGER,
+        confidence INTEGER,
+        satisfaction INTEGER,
+        ab_group TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid),
+        FOREIGN KEY (course_id) REFERENCES courses(id)
+    )
+`, (err) => {
+    if (err) console.error("Erreur création table arcs_responses :", err.message);
+    else console.log("Table 'arcs_responses' prête.");
 });
 
 module.exports = db;

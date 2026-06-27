@@ -9,13 +9,7 @@ import {
 } from "react-icons/fa";
 import { useLocation, useNavigate } from "react-router-dom";
 import useAuth from "../hooks/useAuth";
-
-const initialNotifications = [
-  { id: 1, text: "Nouveau cours recommandé : React Hooks", time: "Il y a 5 min" },
-  { id: 2, text: "Quiz disponible : JavaScript avancé", time: "Il y a 1 heure" },
-  { id: 3, text: "Badge obtenu : Développeur Frontend", time: "Il y a 3 heures" },
-  { id: 4, text: "Votre session d’apprentissage a été sauvegardée", time: "Hier" },
-];
+import useNotifications from "../hooks/useNotifications";
 
 function useClickOutside(ref, handler) {
   useEffect(() => {
@@ -33,14 +27,14 @@ function useClickOutside(ref, handler) {
 }
 
 export default function Header() {
-  const { currentUser, userData, logout } = useAuth();   // ← currentUser ajouté
+  const { currentUser, userData, logout } = useAuth();
+  const { notifications, unreadCount, markAllAsRead } = useNotifications();
   const location = useLocation();
   const navigate = useNavigate();
   const isDashboard = location.pathname === "/dashboard";
 
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [notifications, setNotifications] = useState(initialNotifications);
 
   const notifRef = useRef(null);
   const profileRef = useRef(null);
@@ -53,18 +47,24 @@ export default function Header() {
     navigate("/login");
   };
 
-  const markAllAsRead = () => {
-    setNotifications([]);
-  };
-
-  // Fallbacks intelligents pour éviter le "Ahmed" statique
   const displayName = userData?.name || currentUser?.displayName || "Ahmed";
   const displayEmail = userData?.email || currentUser?.email || "ahmed@example.com";
   const avatarLetter = (displayName?.[0] || "A").toUpperCase();
 
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp + "Z");
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMinutes = Math.floor(diffMs / 60000);
+    if (diffMinutes < 1) return "À l’instant";
+    if (diffMinutes < 60) return `Il y a ${diffMinutes} min`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `Il y a ${diffHours} h`;
+    return date.toLocaleDateString("fr-FR");
+  };
+
   return (
     <div className="flex items-center justify-between mb-6">
-      {/* Message de bienvenue */}
       <div className="ml-12 lg:ml-0">
         {isDashboard ? (
           <>
@@ -83,9 +83,8 @@ export default function Header() {
         )}
       </div>
 
-      {/* Notifications + Profil */}
       <div className="flex items-center gap-3 ml-4">
-        {/* ========== Notification (entièrement restaurée) ========== */}
+        {/* Notification */}
         <div ref={notifRef} className="relative">
           <button
             onClick={() => {
@@ -95,7 +94,7 @@ export default function Header() {
             className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white shadow-sm border border-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition relative"
           >
             <FaBell className="text-lg" />
-            {notifications.length > 0 && (
+            {unreadCount > 0 && (
               <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 border-2 border-white rounded-full" />
             )}
           </button>
@@ -105,8 +104,7 @@ export default function Header() {
               <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100">
                 <h4 className="font-semibold text-sm text-gray-900">Notifications</h4>
                 <div className="flex items-center gap-2">
-                  {/* Mark all as read button */}
-                  {notifications.length > 0 && (
+                  {unreadCount > 0 && (
                     <button
                       onClick={markAllAsRead}
                       className="text-gray-400 hover:text-gray-600 transition"
@@ -133,8 +131,10 @@ export default function Header() {
                     key={notif.id}
                     className="px-4 py-3 hover:bg-gray-50 transition cursor-pointer border-b border-gray-50 last:border-0"
                   >
-                    <p className="text-sm text-gray-800">{notif.text}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{notif.time}</p>
+                    <p className={`text-sm ${!notif.read ? "font-semibold text-gray-900" : "text-gray-700"}`}>
+                      {notif.message}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">{formatTime(notif.created_at)}</p>
                   </div>
                 ))}
               </div>
@@ -145,7 +145,7 @@ export default function Header() {
           )}
         </div>
 
-        {/* ========== Profil ========== */}
+        {/* Profil */}
         <div ref={profileRef} className="relative">
           <button
             onClick={() => {

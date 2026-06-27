@@ -17,4 +17,30 @@ router.get("/", (req, res) => {
   });
 });
 
+// GET /api/courses/user/:uid – returns only courses started by the user
+router.get("/user/:uid", (req, res) => {
+  const { uid } = req.params;
+  const sql = `
+    SELECT c.*, cat.name AS category_name, up.progress
+    FROM courses c
+    LEFT JOIN categories cat ON c.category_id = cat.id
+    INNER JOIN user_progress up ON up.course_id = c.id AND up.firebase_uid = ?
+    ORDER BY cat.name, c.title
+  `;
+  db.all(sql, [uid], (err, rows) => {
+    if (err) return res.status(500).json({ message: err.message });
+    res.json(rows || []);
+  });
+});
+
+// GET /api/courses/:id
+router.get("/:id", (req, res) => {
+    const { id } = req.params;
+    db.get("SELECT * FROM courses WHERE id = ?", [id], (err, course) => {
+        if (err) return res.status(500).json({ message: err.message });
+        if (!course) return res.status(404).json({ message: "Course not found" });
+        res.json(course);
+    });
+});
+
 module.exports = router;

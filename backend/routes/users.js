@@ -6,10 +6,10 @@ const db = require("../database/database");
 
 // Route d'inscription existante (POST /)
 router.post("/", (req, res) => {
-    const { firebase_uid, name, email } = req.body;
-    const sql = `INSERT INTO users(firebase_uid, name, email, created_at)
-                 VALUES(?,?,?,datetime('now'))`;
-    db.run(sql, [firebase_uid, name, email], function(err) {
+    const { firebase_uid, name, email, ab_group } = req.body;
+    const sql = `INSERT INTO users(firebase_uid, name, email, ab_group, created_at)
+                 VALUES(?,?,?,?,datetime('now'))`;
+    db.run(sql, [firebase_uid, name, email, ab_group || "A"], function(err) {
         if (err) {
             console.error(err);
             return res.status(500).json({ message: err.message });

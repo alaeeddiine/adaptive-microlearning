@@ -147,15 +147,23 @@ export default function Profile() {
 
   const handleDeleteAccount = async () => {
     setDeleteError("");
-
     if (deleteEmail !== currentUser.email) {
       setDeleteError("L'email ne correspond pas à votre compte.");
       return;
     }
-
     try {
-      await deleteUser(currentUser);
+      // 1. Delete Firestore document FIRST
       await deleteDoc(doc(db, "users", currentUser.uid));
+
+      // 2. Delete from SQLite via backend (still authenticated here)
+      await fetch(`http://localhost:5000/api/admin/users/${currentUser.uid}`, {
+        method: "DELETE",
+      });
+
+      // 3. Finally, delete Firebase Auth user (this will sign out)
+      await deleteUser(currentUser);
+
+      // onAuthStateChanged will redirect to /login automatically
     } catch (err) {
       if (err.code === "auth/requires-recent-login") {
         setDeleteError(

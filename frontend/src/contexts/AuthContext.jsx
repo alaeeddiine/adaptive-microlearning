@@ -56,16 +56,20 @@ export function AuthProvider({ children }) {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(cred.user, { displayName: name });
 
-    // 2. Enregistrer dans Firestore
+    // 2. Assigner un groupe A/B avant toute utilisation
+    const abGroup = Math.random() < 0.5 ? "A" : "B";
+
+    // 3. Enregistrer dans Firestore (avec ab_group)
     await setDoc(doc(db, "users", cred.user.uid), {
         uid: cred.user.uid,
         name,
         email,
         questionnaireComplete: false,
         createdAt: new Date(),
+        ab_group: abGroup,
     });
 
-    // 3. Envoyer au backend SQLite
+    // 4. Envoyer au backend SQLite (avec ab_group)
     try {
         const response = await fetch("http://localhost:5000/api/users", {
             method: "POST",
@@ -74,27 +78,42 @@ export function AuthProvider({ children }) {
                 firebase_uid: cred.user.uid,
                 name,
                 email,
+                ab_group: abGroup,
             }),
         });
-
         if (!response.ok) {
             const errData = await response.json();
             throw new Error(errData.message || "Erreur backend");
         }
     } catch (error) {
         console.error("Erreur SQLite :", error);
-        // Optionnel : ne pas bloquer l’inscription
     }
 
-    // Mise à jour locale
+    // 5. Notification de bienvenue
+    try {
+        await fetch("http://localhost:5000/api/notifications", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                firebase_uid: cred.user.uid,
+                message: "🎉 Bienvenue sur LearnSmart ! Nous sommes ravis de vous compter parmi nous.",
+                type: "welcome",
+            }),
+        });
+    } catch (error) {
+        console.error("Erreur notification de bienvenue :", error);
+    }
+
+    // 6. Mise à jour locale du contexte
     updateUserData({
         name,
         email,
         questionnaireComplete: false,
+        ab_group: abGroup,
     });
 
     return cred.user;
-};
+  };
 
   const login = (email, password) =>
     signInWithEmailAndPassword(auth, email, password);

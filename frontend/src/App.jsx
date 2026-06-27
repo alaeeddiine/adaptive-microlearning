@@ -4,11 +4,13 @@ import Register from "./pages/auth/Register";
 import Dashboard from "./pages/dashboard/Dashboard";
 import Questionnaire from "./pages/Questionnaire";
 import Courses from "./pages/courses/Courses";
+import CoursePlayer from "./pages/courses/CoursePlayer";
 import Recommendations from "./pages/recommendations/Recommendations";
 import Quiz from "./pages/quiz/Quiz";
 import Progress from "./pages/progress/Progress";
 import Settings from "./pages/settings/Settings";
 import History from "./pages/history/History";
+import SessionContext from "./pages/SessionContext";
 
 // Admin
 import AdminDashboard from "./pages/admin/AdminDashboard";
@@ -59,6 +61,7 @@ export default function App() {
               )
             }
           />
+          <Route path="/session" element={<SessionContext />} />
 
           <Route
             path="/courses"
@@ -66,6 +69,7 @@ export default function App() {
               needsQuestionnaire ? <Navigate to="/questionnaire" /> : <Courses />
             }
           />
+          <Route path="/course/:id" element={<CoursePlayer />} />
           <Route
             path="/recommendations"
             element={

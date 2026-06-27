@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaEye, FaSearch } from "react-icons/fa";
+import { FaEye, FaSearch, FaSync } from "react-icons/fa";
 import Header from "../../components/Header";
 
 export default function AdminUsers() {
@@ -9,19 +9,34 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-    useEffect(() => {
-        fetch("http://localhost:5000/api/admin/users")
-        .then((res) => res.json())
-        .then((data) => {
-            setUsers(Array.isArray(data) ? data : []);
-            setLoading(false);
-        })
-        .catch((err) => {
-            console.error(err);
-            setUsers([]);
-            setLoading(false);
-        });
-    }, []);
+  const fetchUsers = useCallback(() => {
+    setLoading(true);
+    fetch("http://localhost:5000/api/admin/users")
+      .then((res) => res.json())
+      .then((data) => {
+        setUsers(Array.isArray(data) ? data : []);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setUsers([]);
+        setLoading(false);
+      });
+  }, []);
+
+  // Initial fetch + auto‑refresh every 60 seconds
+  useEffect(() => {
+    fetchUsers();
+    const interval = setInterval(fetchUsers, 60000);
+    return () => clearInterval(interval);
+  }, [fetchUsers]);
+
+  // Refetch when the window gains focus
+  useEffect(() => {
+    const onFocus = () => fetchUsers();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [fetchUsers]);
 
   const filteredUsers = users.filter(
     (u) =>
@@ -33,10 +48,7 @@ export default function AdminUsers() {
     <>
       <style>{`
         .table-classic th {
-          font-weight: 600;
-          font-size: 0.875rem;
-          color: #6B7280;
-          background: #F9FAFB;
+          font-weight: 600; font-size: 0.875rem; color: #6B7280; background: #F9FAFB;
         }
         .table-classic th:first-child { border-top-left-radius: 16px; }
         .table-classic th:last-child { border-top-right-radius: 16px; }
@@ -46,13 +58,21 @@ export default function AdminUsers() {
 
       <Header />
 
-      <div className="mb-6">
-        <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 flex items-center gap-2">
-          Utilisateurs
-        </h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Consultez et gérez tous les utilisateurs de la plateforme.
-        </p>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 flex items-center gap-2">
+            Utilisateurs
+          </h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Consultez et gérez tous les utilisateurs de la plateforme.
+          </p>
+        </div>
+        <button
+          onClick={fetchUsers}
+          className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition shadow-sm"
+        >
+          <FaSync className={loading ? "animate-spin" : ""} /> Actualiser
+        </button>
       </div>
 
       {/* Barre de recherche */}

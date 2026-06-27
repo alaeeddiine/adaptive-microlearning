@@ -13,6 +13,12 @@ const db = new sqlite3.Database(DB_FILE, (err) => {
     }
 });
 
+db.run(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'`, (err) => {
+    if (err && !err.message.includes("duplicate column name")) {
+        console.error("Erreur ajout colonne role:", err.message);
+    }
+});
+
 // Création de la table users (inchangé)
 db.run(`
     CREATE TABLE IF NOT EXISTS users (
@@ -25,6 +31,21 @@ db.run(`
 `, (err) => {
     if (err) console.error("Erreur création table users :", err.message);
     else console.log("Table 'users' prête.");
+});
+db.run(`
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firebase_uid TEXT NOT NULL,
+        message TEXT NOT NULL,
+        read INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid)
+    )
+`);
+db.run(`ALTER TABLE notifications ADD COLUMN type TEXT DEFAULT 'info'`, (err) => {
+    if (err && !err.message.includes("duplicate column name")) {
+        console.error("Erreur ajout colonne type:", err.message);
+    }
 });
 db.run(`
     CREATE TABLE IF NOT EXISTS courses (
@@ -105,6 +126,52 @@ db.run(`ALTER TABLE courses ADD COLUMN category_id INTEGER`, (err) => {
     }
 });
 
+db.run(`
+    CREATE TABLE IF NOT EXISTS user_progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firebase_uid TEXT NOT NULL,
+        course_id INTEGER NOT NULL,
+        progress REAL DEFAULT 0,
+        last_watched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid),
+        FOREIGN KEY (course_id) REFERENCES courses(id),
+        UNIQUE(firebase_uid, course_id)
+    )
+`);
+db.run(`ALTER TABLE user_progress ADD COLUMN watched_segments TEXT DEFAULT '[]'`, (err) => {
+    if (err && !err.message.includes("duplicate column name")) {
+        console.error("Erreur ajout colonne watched_segments:", err.message);
+    }
+});
+db.run(`ALTER TABLE users ADD COLUMN ab_group TEXT`, (err) => {
+    if (err && !err.message.includes("duplicate column name")) {
+        console.error("Erreur ajout colonne ab_group:", err.message);
+    }
+});
+db.run(`
+    CREATE TABLE IF NOT EXISTS session_context (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firebase_uid TEXT NOT NULL,
+        time_available TEXT,
+        connection_level TEXT,
+        device_type TEXT,
+        battery_level TEXT,
+        time_of_day TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid)
+    )
+`);
+db.run(`
+    CREATE TABLE IF NOT EXISTS user_activity (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firebase_uid TEXT NOT NULL,
+        course_id INTEGER,
+        event_type TEXT NOT NULL,
+        event_data TEXT,
+        ab_group TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+`);
 // Ajout des colonnes questionnaire (si elles n'existent pas déjà)
 const newColumns = [
     { name: "age", type: "TEXT" },

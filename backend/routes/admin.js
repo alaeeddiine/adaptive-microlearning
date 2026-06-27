@@ -11,6 +11,15 @@ router.get("/stats", (req, res) => {
     });
 });
 
+router.get("/users", (req, res) => {
+    db.all("SELECT firebase_uid, name, email, created_at FROM users WHERE role != 'admin'", (err, rows) => {
+        if (err) return res.status(500).json({ message: err.message });
+        // Add progress average as before if needed
+        const users = rows.map(u => ({ ...u, completed: 0 })); // simplified
+        res.json(users);
+    });
+});
+
 // ---------- Utilisateurs ----------
 router.get("/users", (req, res) => {
     db.all("SELECT firebase_uid, name, email, created_at FROM users", (err, rows) => {
@@ -33,6 +42,23 @@ router.get("/users/:uid", (req, res) => {
             res.json({ user, courses: courses || [] });
         });
     });
+});
+router.delete("/users/:uid", (req, res) => {
+  const { uid } = req.params;
+
+  // First, delete all courses linked to this user
+  db.run("DELETE FROM courses WHERE firebase_uid = ?", [uid], (err) => {
+    if (err) {
+      return res.status(500).json({ message: err.message });
+    }
+
+    // Then delete the user
+    db.run("DELETE FROM users WHERE firebase_uid = ?", [uid], function (err) {
+      if (err) return res.status(500).json({ message: err.message });
+      if (this.changes === 0) return res.status(404).json({ message: "Utilisateur non trouvé" });
+      res.json({ message: "Utilisateur supprimé" });
+    });
+  });
 });
 
 // ---------- Catégories ----------

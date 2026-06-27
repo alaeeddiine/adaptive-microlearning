@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  FaSearch, FaFilter, FaSort, FaSortUp, FaSortDown, FaPlay, FaExternalLinkAlt,
+  FaSearch, FaFilter, FaSort, FaSortUp, FaSortDown, FaPlay,
 } from "react-icons/fa";
 import Header from "../../components/Header";
 import useCourseCatalog from "../../hooks/useCourseCatalog";
@@ -8,34 +9,33 @@ import useCourseCatalog from "../../hooks/useCourseCatalog";
 const categories = ["Tous", "Développement", "Données", "Design", "Outils"];
 
 export default function Courses() {
-  const { courses, loading } = useCourseCatalog();
+  const { courses, loading, refresh } = useCourseCatalog();
+  const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState("Tous");
   const [sortField, setSortField] = useState(null);
   const [sortOrder, setSortOrder] = useState("asc");
 
-  // ---- Tri + filtrage (identique, mais on utilise category_name) ----
+  // Refetch on window focus
+  useEffect(() => {
+    const onFocus = () => refresh?.();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refresh]);
+
   const filteredAndSorted = useMemo(() => {
     let result = [...courses];
-
-    if (filter !== "Tous") {
-      result = result.filter(c => c.category_name === filter);
-    }
-
+    if (filter !== "Tous") result = result.filter(c => c.category_name === filter);
     if (searchTerm.trim()) {
       const term = searchTerm.toLowerCase();
       result = result.filter(c => c.title.toLowerCase().includes(term));
     }
-
     if (sortField) {
       result.sort((a, b) => {
         let valA, valB;
         switch (sortField) {
-          case "title":
-          case "category_name":
-          case "level":
-          case "duration":
+          case "title": case "category_name": case "level": case "duration":
             valA = (a[sortField] || "").toLowerCase();
             valB = (b[sortField] || "").toLowerCase();
             break;
@@ -43,53 +43,33 @@ export default function Courses() {
             valA = a.progress || 0;
             valB = b.progress || 0;
             break;
-          default:
-            return 0;
+          default: return 0;
         }
         if (valA < valB) return sortOrder === "asc" ? -1 : 1;
         if (valA > valB) return sortOrder === "asc" ? 1 : -1;
         return 0;
       });
     }
-
     return result;
   }, [courses, filter, searchTerm, sortField, sortOrder]);
 
   const handleSort = (field) => {
-    if (sortField === field) {
-      setSortOrder(prev => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortOrder("asc");
-    }
+    if (sortField === field) setSortOrder(prev => (prev === "asc" ? "desc" : "asc"));
+    else { setSortField(field); setSortOrder("asc"); }
   };
 
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <FaSort className="text-gray-400 ml-1 text-xs" />;
-    return sortOrder === "asc" ? (
-      <FaSortUp className="text-purple-600 ml-1 text-xs" />
-    ) : (
-      <FaSortDown className="text-purple-600 ml-1 text-xs" />
-    );
+    return sortOrder === "asc" ? <FaSortUp className="text-purple-600 ml-1 text-xs" /> : <FaSortDown className="text-purple-600 ml-1 text-xs" />;
   };
 
-  const handleStart = (course) => {
-    if (course.media) {
-      window.open(course.media, "_blank");
-    } else if (course.quiz_link) {
-      window.open(course.quiz_link, "_blank");
-    } else {
-      alert("Aucun contenu disponible pour le moment.");
-    }
-  };
+  const handleStart = (course) => navigate(`/course/${course.id}`);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-700" />
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center h-full">
+      <div className="animate-spin h-10 w-10 border-b-2 border-purple-700 rounded-full" />
+    </div>
+  );
 
   return (
     <>
@@ -97,12 +77,8 @@ export default function Courses() {
         @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&display=swap');
         body { font-family: 'Inter', sans-serif; margin:0; background:#F7F8FC; -webkit-font-smoothing:antialiased; }
         .progress-bar { transition: width 0.6s ease; }
-        .table-classic {
-          border-collapse: separate; border-spacing: 0;
-        }
-        .table-classic th {
-          font-weight: 600; font-size: 0.875rem; color: #6B7280; background: #F9FAFB;
-        }
+        .table-classic { border-collapse: separate; border-spacing: 0; }
+        .table-classic th { font-weight: 600; font-size: 0.875rem; color: #6B7280; background: #F9FAFB; }
         .table-classic th:first-child { border-top-left-radius: 16px; }
         .table-classic th:last-child { border-top-right-radius: 16px; }
         .table-classic tr:last-child td:first-child { border-bottom-left-radius: 16px; }
@@ -110,70 +86,42 @@ export default function Courses() {
       `}</style>
 
       <Header />
-
       <div className="mb-6">
-        <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 flex items-center gap-2">
-          Mes cours
-        </h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Parcourez la bibliothèque de cours disponibles pour vous.
-        </p>
+        <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900">Mes cours</h2>
+        <p className="text-sm text-gray-500 mt-1">Parcourez la bibliothèque de cours disponibles pour vous.</p>
       </div>
 
-      {/* Recherche & filtre */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4">
         <div className="relative w-full sm:w-64">
           <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
-          <input
-            type="text"
-            placeholder="Rechercher un cours..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-white outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-          />
+          <input type="text" placeholder="Rechercher un cours..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm bg-white outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100" />
         </div>
         <div className="relative w-full sm:w-48">
           <FaFilter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="appearance-none pl-10 pr-8 py-2.5 rounded-xl border border-gray-200 text-sm bg-white outline-none focus:border-purple-400 cursor-pointer w-full"
-          >
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
+          <select value={filter} onChange={(e) => setFilter(e.target.value)}
+            className="appearance-none pl-10 pr-8 py-2.5 rounded-xl border border-gray-200 text-sm bg-white outline-none focus:border-purple-400 cursor-pointer w-full">
+            {categories.map(cat => <option key={cat}>{cat}</option>)}
           </select>
         </div>
       </div>
 
-      {/* Tableau */}
       <div className="overflow-x-auto rounded-2xl border border-gray-100 shadow-sm">
         <table className="w-full text-sm table-classic bg-white">
           <thead>
             <tr>
-              {[
-                { label: "Nom", field: "title" },
-                { label: "Catégorie", field: "category_name" },
-                { label: "Niveau", field: "level" },
-                { label: "Durée", field: "duration" },
-                { label: "Progression", field: "progress" },
-              ].map((col) => (
-                <th
-                  key={col.field}
-                  onClick={() => handleSort(col.field)}
-                  className="px-4 py-3 text-left cursor-pointer select-none hover:text-purple-600 transition"
-                >
-                  <span className="inline-flex items-center">
-                    {col.label}
-                    <SortIcon field={col.field} />
-                  </span>
-                </th>
-              ))}
+              {[{ label: "Nom", field: "title" }, { label: "Catégorie", field: "category_name" }, { label: "Niveau", field: "level" }, { label: "Durée", field: "duration" }, { label: "Progression", field: "progress" }]
+                .map(col => (
+                  <th key={col.field} onClick={() => handleSort(col.field)} className="px-4 py-3 text-left cursor-pointer select-none hover:text-purple-600 transition">
+                    <span className="inline-flex items-center">{col.label}<SortIcon field={col.field} /></span>
+                  </th>
+                ))
+              }
               <th className="px-4 py-3 text-center">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {filteredAndSorted.map((course) => (
+            {filteredAndSorted.map(course => (
               <tr key={course.id} className="hover:bg-gray-50 transition">
                 <td className="px-4 py-3 font-medium text-gray-900">{course.title}</td>
                 <td className="px-4 py-3 text-gray-600">{course.category_name || "—"}</td>
@@ -182,23 +130,15 @@ export default function Courses() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="w-20 bg-gray-100 rounded-full h-2">
-                      <div
-                        className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full progress-bar"
-                        style={{ width: `${course.progress || 0}%` }}
-                      />
+                      <div className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full progress-bar" style={{ width: `${course.progress || 0}%` }} />
                     </div>
                     <span className="text-xs text-gray-600 font-medium">{course.progress || 0}%</span>
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex items-center justify-center">
-                    <button
-                      onClick={() => handleStart(course)}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition shadow-sm"
-                    >
-                      <FaPlay className="text-xs" /> Commencer
-                    </button>
-                  </div>
+                  <button onClick={() => handleStart(course)} className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition shadow-sm">
+                    <FaPlay className="text-xs" /> Commencer
+                  </button>
                 </td>
               </tr>
             ))}

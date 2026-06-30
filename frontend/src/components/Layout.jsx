@@ -1,7 +1,9 @@
 import { Outlet } from "react-router-dom";
 import { Sidebar, BottomNav } from "./sidebar";
+import useAutoSession from "../hooks/useAutoSession";
 
 export default function Layout() {
+  useAutoSession();   // starts session tracking
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
       <Sidebar />

@@ -40,6 +40,9 @@ export default function AdminDashboard() {
     { icon: FaStar, label: "Groupe B", value: data.groupB, color: "bg-orange-100 text-orange-600" },
   ];
 
+  // Helper to slice arrays to max 4 items
+  const limit4 = (arr) => (Array.isArray(arr) ? arr.slice(0, 4) : []);
+
   return (
     <>
       <style>{`
@@ -71,13 +74,13 @@ export default function AdminDashboard() {
 
       {/* Two columns: recent signups + recent courses */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Recent signups */}
+        {/* Recent signups (max 4) */}
         <div className="bg-white rounded-[24px] p-5 sm:p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
             <FaUserPlus className="text-purple-600" /> Derniers inscrits
           </h3>
           <div className="space-y-3">
-            {data.recentUsers?.map((user, idx) => (
+            {limit4(data.recentUsers).map((user, idx) => (
               <div key={idx} className="flex items-center justify-between text-sm">
                 <div>
                   <p className="font-medium text-gray-900">{user.name}</p>
@@ -94,13 +97,13 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Recently played courses */}
+        {/* Recently played courses (max 4) */}
         <div className="bg-white rounded-[24px] p-5 sm:p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
             <FaPlay className="text-purple-600" /> Cours récemment joués
           </h3>
           <div className="space-y-3 max-h-64 overflow-y-auto">
-            {data.recentCourses?.map((course, idx) => (
+            {limit4(data.recentCourses).map((course, idx) => (
               <div key={idx} className="flex items-center justify-between text-sm">
                 <span className="font-medium text-gray-900 truncate">{course.title}</span>
                 <span className="text-xs text-gray-400 whitespace-nowrap">
@@ -117,19 +120,23 @@ export default function AdminDashboard() {
 
       {/* Most active users + Top courses */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Most active users */}
+        {/* Most active users (max 4) */}
         <div className="bg-white rounded-[24px] p-5 sm:p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
             <FaFire className="text-purple-600" /> Utilisateurs les plus actifs
           </h3>
           <div className="space-y-3">
-            {data.mostActiveUsers?.map((user, idx) => (
+            {limit4(data.mostActiveUsers).map((user, idx) => (
               <div key={idx} className="flex items-center justify-between text-sm">
                 <div>
                   <p className="font-medium text-gray-900">{user.name}</p>
                   <p className="text-xs text-gray-500">{user.email}</p>
                 </div>
-                <span className="text-xs text-gray-400">{user.totalTimeFormatted}</span>
+                <span className="text-xs text-gray-400">
+                  {typeof user.totalTimeFormatted === 'string' && !user.totalTimeFormatted.includes('NaN')
+                    ? user.totalTimeFormatted
+                    : '0m'}
+                </span>
               </div>
             ))}
             {data.mostActiveUsers?.length === 0 && (
@@ -138,13 +145,13 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Top courses */}
+        {/* Top courses (max 4) */}
         <div className="bg-white rounded-[24px] p-5 sm:p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
             <FaBookOpen className="text-purple-600" /> Cours les plus suivis
           </h3>
           <div className="space-y-3">
-            {data.topCourses?.map((course, idx) => (
+            {limit4(data.topCourses).map((course, idx) => (
               <div key={idx} className="flex items-center justify-between text-sm">
                 <span className="font-medium text-gray-900">{course.title}</span>
                 <span className="text-xs text-gray-500">{course.user_count} utilisateur(s)</span>

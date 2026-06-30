@@ -13,6 +13,8 @@ const sessionRoute = require("./routes/session");
 const activityRoute = require("./routes/activity");
 const analyticsRoute = require("./routes/analytics");
 const arcsRoute = require("./routes/arcs");
+const quizRoute = require("./routes/quiz");
+const catalogRoute = require("./routes/catalog");
 
 const app = express();
 
@@ -29,6 +31,8 @@ app.use("/api/session", sessionRoute);
 app.use("/api/activity", activityRoute);
 app.use("/api/analytics", analyticsRoute);
 app.use("/api/arcs", arcsRoute);
+app.use("/api/quiz", quizRoute);
+app.use("/api/catalog", catalogRoute);
 
 app.listen(5000, () => {
     console.log("Server running");

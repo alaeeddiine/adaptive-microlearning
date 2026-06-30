@@ -18,13 +18,23 @@ router.post("/", (req, res) => {
         res.json({ id: this.lastID });
     });
 });
+
 router.get("/user/:uid", (req, res) => {
     const { uid } = req.params;
-    db.all("SELECT * FROM user_activity WHERE firebase_uid = ? ORDER BY created_at DESC LIMIT 10", [uid], (err, rows) => {
+    const sql = `
+        SELECT ua.*, c.title AS course_title, q.title AS quiz_title
+        FROM user_activity ua
+        LEFT JOIN courses c ON c.id = ua.course_id AND ua.event_type NOT LIKE 'quiz%'
+        LEFT JOIN quizzes q ON q.id = ua.course_id AND ua.event_type LIKE 'quiz%'
+        WHERE ua.firebase_uid = ?
+        ORDER BY ua.created_at DESC LIMIT 10
+    `;
+    db.all(sql, [uid], (err, rows) => {
         if (err) return res.status(500).json({ message: err.message });
         res.json(rows || []);
     });
 });
+
 router.get("/weekly/:uid", (req, res) => {
     const { uid } = req.params;
     const sql = `

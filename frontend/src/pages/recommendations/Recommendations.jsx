@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FaLightbulb, FaPlay, FaStar, FaBrain, FaClock, FaFire,
+  FaQuestionCircle,
 } from "react-icons/fa";
 import Header from "../../components/Header";
 import useAuth from "../../hooks/useAuth";
@@ -12,24 +13,28 @@ function RecommendationCard({ item, onStart }) {
     <div className="min-w-[240px] sm:min-w-[280px] bg-white rounded-[24px] p-5 shadow-sm border border-gray-100 hover-elevate flex flex-col">
       <div className="flex items-start justify-between mb-3">
         <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-2xl">
-          {item.icon || "📘"}
+          {item.type === "quiz" ? <FaQuestionCircle className="text-purple-500" /> : (item.icon || "📘")}
         </div>
         <span className="text-xs font-medium px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full">
-          {item.category_name || ""}
+          {item.type === "quiz" ? "Quiz" : item.category_name || "Cours"}
         </span>
       </div>
       <h4 className="text-base font-bold text-gray-900 line-clamp-1">{item.title}</h4>
       <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.description}</p>
       <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
-        <span className="flex items-center gap-1"><FaBrain className="text-gray-400" />{item.level}</span>
-        <span className="flex items-center gap-1"><FaClock className="text-gray-400" />{item.duration}</span>
-        <span className="flex items-center gap-1 text-yellow-500"><FaStar className="text-yellow-400" />{item.rating || "—"}</span>
+        {item.type !== "quiz" && (
+          <>
+            <span className="flex items-center gap-1"><FaBrain className="text-gray-400" />{item.level}</span>
+            <span className="flex items-center gap-1"><FaClock className="text-gray-400" />{item.duration}</span>
+            <span className="flex items-center gap-1 text-yellow-500"><FaStar className="text-yellow-400" />{item.rating || "—"}</span>
+          </>
+        )}
       </div>
       <button
         onClick={() => onStart(item)}
         className="mt-4 w-full bg-purple-600 text-white py-2 rounded-xl text-xs font-semibold hover:bg-purple-700 transition shadow-sm flex items-center justify-center gap-1"
       >
-        <FaPlay className="text-xs" /> Démarrer
+        <FaPlay className="text-xs" /> {item.type === "quiz" ? "Commencer le quiz" : "Démarrer"}
       </button>
     </div>
   );
@@ -52,7 +57,7 @@ export default function Recommendations() {
     })
       .then(res => res.json())
       .then(data => {
-        setRecommendations(Array.isArray(data) ? data : []);
+        setRecommendations(Array.isArray(data.courses) ? data.courses : []);
         setLoading(false);
       })
       .catch(err => {
@@ -61,7 +66,13 @@ export default function Recommendations() {
       });
   }, [currentUser]);
 
-  const handleStart = (course) => navigate(`/course/${course.id}`);
+  const handleStart = (item) => {
+    if (item.type === "quiz") {
+      navigate(`/quiz/${item.id}`);
+    } else {
+      navigate(`/course/${item.id}`);
+    }
+  };
 
   // Séparer les données pour les sections
   const featured = recommendations.length > 0 ? recommendations[0] : null;
@@ -81,7 +92,6 @@ export default function Recommendations() {
 
       <Header />
 
-      {/* Titre */}
       <div className="mb-6">
         <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900 flex items-center gap-2">
           <FaLightbulb className="text-yellow-500" /> Recommandations
@@ -109,14 +119,13 @@ export default function Recommendations() {
         </div>
       ) : (
         <>
-          {/* FEATURED CARD */}
           {featured && (
             <div className="mb-8">
               <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-purple-600 to-indigo-700 p-6 sm:p-8 text-white shadow-lg hover-elevate">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-bl-full" />
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                   <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center text-4xl">
-                    {featured.icon || "📘"}
+                    {featured.type === "quiz" ? <FaQuestionCircle /> : (featured.icon || "📘")}
                   </div>
                   <div className="flex-1">
                     <span className="inline-block px-2 py-0.5 bg-white/20 rounded-full text-xs font-medium mb-2">
@@ -125,9 +134,15 @@ export default function Recommendations() {
                     <h3 className="text-2xl sm:text-3xl font-bold">{featured.title}</h3>
                     <p className="mt-2 text-white/80 text-sm max-w-lg">{featured.description}</p>
                     <div className="flex flex-wrap items-center gap-3 mt-3 text-white/70 text-xs">
-                      <span className="flex items-center gap-1"><FaBrain /> {featured.level}</span>
-                      <span className="flex items-center gap-1"><FaClock /> {featured.duration}</span>
-                      <span className="flex items-center gap-1 text-yellow-300"><FaStar /> {featured.rating || "—"}</span>
+                      {featured.type !== "quiz" ? (
+                        <>
+                          <span className="flex items-center gap-1"><FaBrain /> {featured.level}</span>
+                          <span className="flex items-center gap-1"><FaClock /> {featured.duration}</span>
+                          <span className="flex items-center gap-1 text-yellow-300"><FaStar /> {featured.rating || "—"}</span>
+                        </>
+                      ) : (
+                        <span className="flex items-center gap-1"><FaQuestionCircle /> Quiz interactif</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -135,13 +150,12 @@ export default function Recommendations() {
                   onClick={() => handleStart(featured)}
                   className="mt-5 inline-flex items-center gap-2 bg-white text-purple-700 font-semibold py-2.5 px-5 rounded-xl text-sm shadow hover:bg-gray-100 transition"
                 >
-                  <FaPlay /> Commencer
+                  <FaPlay /> {featured.type === "quiz" ? "Commencer le quiz" : "Commencer"}
                 </button>
               </div>
             </div>
           )}
 
-          {/* TRENDING SECTION */}
           {trending.length > 0 && (
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
@@ -157,7 +171,6 @@ export default function Recommendations() {
             </div>
           )}
 
-          {/* MORE RECOMMENDATIONS */}
           {moreRecommendations.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-4">

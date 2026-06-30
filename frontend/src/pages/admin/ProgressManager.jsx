@@ -36,10 +36,10 @@ export default function ProgressManager() {
     }
 
     const completionRateA = metrics.groupA_started > 0
-        ? Math.round((metrics.groupA_completed / metrics.groupA_started) * 100)
+        ? Math.min(100, Math.round((metrics.groupA_completed / metrics.groupA_started) * 100))
         : 0;
     const completionRateB = metrics.groupB_started > 0
-        ? Math.round((metrics.groupB_completed / metrics.groupB_started) * 100)
+        ? Math.min(100, Math.round((metrics.groupB_completed / metrics.groupB_started) * 100))
         : 0;
 
     return (

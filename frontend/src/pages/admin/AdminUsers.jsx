@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaEye, FaSearch, FaSync } from "react-icons/fa";
+import { FaEye, FaSearch, FaSync, FaTrash } from "react-icons/fa";
 import Header from "../../components/Header";
 
 export default function AdminUsers() {
@@ -24,19 +24,29 @@ export default function AdminUsers() {
       });
   }, []);
 
-  // Initial fetch + auto‑refresh every 60 seconds
   useEffect(() => {
     fetchUsers();
     const interval = setInterval(fetchUsers, 60000);
-    return () => clearInterval(interval);
-  }, [fetchUsers]);
-
-  // Refetch when the window gains focus
-  useEffect(() => {
     const onFocus = () => fetchUsers();
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [fetchUsers]);
+
+  const handleDelete = async (uid, name) => {
+    if (!window.confirm(`Supprimer définitivement l'utilisateur "${name}" ? Cette action est irréversible.`)) return;
+    try {
+      const res = await fetch(`http://localhost:5000/api/admin/users/${uid}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Erreur lors de la suppression");
+      setUsers((prev) => prev.filter((u) => u.firebase_uid !== uid));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
 
   const filteredUsers = users.filter(
     (u) =>
@@ -75,7 +85,6 @@ export default function AdminUsers() {
         </button>
       </div>
 
-      {/* Barre de recherche */}
       <div className="relative w-full sm:w-64 mb-4">
         <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
         <input
@@ -101,7 +110,7 @@ export default function AdminUsers() {
                   <th className="px-4 py-3 text-left">Email</th>
                   <th className="px-4 py-3 text-left">Date d'inscription</th>
                   <th className="px-4 py-3 text-left">Progression</th>
-                  <th className="px-4 py-3 text-center">Action</th>
+                  <th className="px-4 py-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -114,22 +123,32 @@ export default function AdminUsers() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-20 bg-gray-100 rounded-full h-2">
-                          <div
-                            className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full"
-                            style={{ width: `${user.completed || 0}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-gray-600">{user.completed || 0}%</span>
+                          <div className="w-20 bg-gray-100 rounded-full h-2">
+                              <div
+                                  className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full"
+                                  style={{ width: `${Math.min(100, user.overall_progress ?? 0)}%` }}
+                              />
+                          </div>
+                          <span className="text-xs text-gray-600 font-medium">
+                              {Math.min(100, user.overall_progress ?? 0)}%
+                          </span>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => navigate(`/admin/users/${user.firebase_uid}/progress`)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition shadow-sm"
-                      >
-                        <FaEye className="text-xs" /> Détails
-                      </button>
+                  </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => navigate(`/admin/users/${user.firebase_uid}/progress`)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition shadow-sm"
+                        >
+                          <FaEye className="text-xs" /> Détails
+                        </button>
+                        <button
+                          onClick={() => handleDelete(user.firebase_uid, user.name)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-semibold hover:bg-red-200 transition"
+                        >
+                          <FaTrash className="text-xs" /> Supprimer
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

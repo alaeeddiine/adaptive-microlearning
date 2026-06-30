@@ -39,26 +39,24 @@ router.get("/dashboard", (req, res) => {
             if (err) return res.status(500).json({ message: err.message });
             data.courses = row.total;
 
-            // 3. Completed courses
+            // 3. Completed courses (progress = 100)
             db.get("SELECT COUNT(*) AS total FROM user_progress WHERE progress >= 100", (err, row) => {
-                if (err) return res.status(500).json({ message: err.message });
-                data.completed = row.total;
+                if (err) { data.completed = 0; } else { data.completed = row.total; }
 
                 // 4. Average progress
                 db.get("SELECT ROUND(AVG(progress)) AS avg FROM user_progress", (err, row) => {
-                    if (err) return res.status(500).json({ message: err.message });
-                    data.avgProgress = row.avg || 0;
+                    if (err) { data.avgProgress = 0; } else { data.avgProgress = row.avg || 0; }
 
                     // 5. Group distribution
                     db.all("SELECT ab_group, COUNT(*) AS count FROM users WHERE ab_group IS NOT NULL GROUP BY ab_group", (err, rows) => {
-                        if (err) return res.status(500).json({ message: err.message });
-                        data.groupA = rows.find(r => r.ab_group === 'A')?.count || 0;
-                        data.groupB = rows.find(r => r.ab_group === 'B')?.count || 0;
+                        if (err) { data.groupA = 0; data.groupB = 0; } else {
+                            data.groupA = rows.find(r => r.ab_group === 'A')?.count || 0;
+                            data.groupB = rows.find(r => r.ab_group === 'B')?.count || 0;
+                        }
 
                         // 6. Last 5 signups (no admins)
                         db.all("SELECT name, email, created_at FROM users WHERE role != 'admin' ORDER BY created_at DESC LIMIT 5", (err, users) => {
-                            if (err) return res.status(500).json({ message: err.message });
-                            data.recentUsers = users || [];
+                            if (err) { data.recentUsers = []; } else { data.recentUsers = users || []; }
 
                             // 7. Top courses (by distinct users who started)
                             db.all(`
@@ -69,19 +67,19 @@ router.get("/dashboard", (req, res) => {
                                 GROUP BY c.id
                                 ORDER BY user_count DESC LIMIT 5
                             `, (err, topCourses) => {
-                                if (err) return res.status(500).json({ message: err.message });
-                                data.topCourses = topCourses || [];
+                                if (err) { data.topCourses = []; } else { data.topCourses = topCourses || []; }
 
                                 // 8. Total time spent (sum of watched segments)
                                 db.all("SELECT watched_segments FROM user_progress", (err, rows) => {
-                                    if (err) return res.status(500).json({ message: err.message });
                                     let totalSeconds = 0;
-                                    rows.forEach(r => {
-                                        try {
-                                            const segments = JSON.parse(r.watched_segments || "[]");
-                                            totalSeconds += mergeAndSum(segments);
-                                        } catch(e) {}
-                                    });
+                                    if (!err) {
+                                        rows.forEach(r => {
+                                            try {
+                                                const segments = JSON.parse(r.watched_segments || "[]");
+                                                totalSeconds += mergeAndSum(segments);
+                                            } catch (e) {}
+                                        });
+                                    }
                                     const hours = Math.floor(totalSeconds / 3600);
                                     const minutes = Math.floor((totalSeconds % 3600) / 60);
                                     data.totalTimeSpent = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
@@ -96,8 +94,7 @@ router.get("/dashboard", (req, res) => {
                                         ORDER BY last_played DESC
                                         LIMIT 10
                                     `, (err, recentCourses) => {
-                                        if (err) return res.status(500).json({ message: err.message });
-                                        data.recentCourses = recentCourses || [];
+                                        if (err) { data.recentCourses = []; } else { data.recentCourses = recentCourses || []; }
 
                                         // 10. Most active users (top 5 by total watch time)
                                         db.all(`
@@ -107,32 +104,33 @@ router.get("/dashboard", (req, res) => {
                                             JOIN users u ON u.firebase_uid = up.firebase_uid
                                             GROUP BY up.firebase_uid
                                         `, (err, userRows) => {
-                                            if (err) return res.status(500).json({ message: err.message });
-                                            const userTimes = userRows.map(u => {
-                                                let totalSec = 0;
-                                                const segmentsConcat = u.all_segments || "";
-                                                const segmentStrs = segmentsConcat.split(/\]\s*,\s*\[/);
-                                                segmentStrs.forEach(seg => {
-                                                    const cleaned = seg.replace(/^\[|\]$/g, "");
-                                                    const nums = cleaned.split(",").map(Number);
-                                                    if (nums.length === 2) {
-                                                        totalSec += (nums[1] - nums[0]);
-                                                    }
+                                            let mostActiveUsers = [];
+                                            if (!err) {
+                                                const userTimes = userRows.map(u => {
+                                                    let totalSec = 0;
+                                                    const segmentsConcat = u.all_segments || "";
+                                                    const segmentStrs = segmentsConcat.split(/\]\s*,\s*\[/);
+                                                    segmentStrs.forEach(seg => {
+                                                        const cleaned = seg.replace(/^\[|\]$/g, "");
+                                                        const nums = cleaned.split(",").map(Number);
+                                                        if (nums.length === 2) {
+                                                            totalSec += (nums[1] - nums[0]);
+                                                        }
+                                                    });
+                                                    return {
+                                                        firebase_uid: u.firebase_uid,
+                                                        name: u.name,
+                                                        email: u.email,
+                                                        totalSeconds: totalSec,
+                                                    };
                                                 });
-                                                return {
-                                                    firebase_uid: u.firebase_uid,
-                                                    name: u.name,
-                                                    email: u.email,
-                                                    totalSeconds: totalSec,
-                                                };
-                                            });
-                                            userTimes.sort((a, b) => b.totalSeconds - a.totalSeconds);
-                                            const topUsers = userTimes.slice(0, 5).map(u => ({
-                                                ...u,
-                                                totalTimeFormatted: formatTime(u.totalSeconds),
-                                            }));
-                                            data.mostActiveUsers = topUsers;
-
+                                                userTimes.sort((a, b) => b.totalSeconds - a.totalSeconds);
+                                                mostActiveUsers = userTimes.slice(0, 5).map(u => ({
+                                                    ...u,
+                                                    totalTimeFormatted: formatTime(u.totalSeconds),
+                                                }));
+                                            }
+                                            data.mostActiveUsers = mostActiveUsers;
                                             res.json(data);
                                         });
                                     });
@@ -148,11 +146,56 @@ router.get("/dashboard", (req, res) => {
 
 // ---------- USERS ----------
 router.get("/users", (req, res) => {
-    db.all("SELECT firebase_uid, name, email, created_at FROM users WHERE role != 'admin'", (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
-        const users = rows.map(u => ({ ...u, completed: 0 }));
-        res.json(users);
-    });
+    db.all(
+        `SELECT u.firebase_uid, u.name, u.email, u.created_at,
+                COALESCE(AVG(up.progress), 0) AS avg_course,
+                (SELECT COALESCE(ROUND(AVG(sq.score)), 0)
+                 FROM (
+                     SELECT ua.quiz_id,
+                            ROUND(SUM(ua.is_correct)*100.0/COUNT(ua.id)) AS score
+                     FROM user_answers ua
+                     JOIN questions q ON q.id = ua.question_id
+                     WHERE ua.firebase_uid = u.firebase_uid
+                     GROUP BY ua.quiz_id
+                 ) sq
+                ) AS avg_quiz
+         FROM users u
+         LEFT JOIN user_progress up ON up.firebase_uid = u.firebase_uid
+         WHERE u.role != 'admin'
+         GROUP BY u.firebase_uid
+         ORDER BY u.created_at DESC`,
+        (err, rows) => {
+            if (err) return res.status(500).json({ message: err.message });
+
+            const users = rows.map(u => {
+                const course = Math.round(u.avg_course) || 0;
+                const quiz = Math.round(u.avg_quiz) || 0;
+
+                // Combined overall (average of both, if both > 0)
+                let overall;
+                if (course > 0 && quiz > 0) {
+                    overall = Math.round((course + quiz) / 2);
+                } else if (course > 0) {
+                    overall = course;
+                } else if (quiz > 0) {
+                    overall = quiz;
+                } else {
+                    overall = 0;
+                }
+
+                return {
+                    firebase_uid: u.firebase_uid,
+                    name: u.name,
+                    email: u.email,
+                    created_at: u.created_at,
+                    overall_progress: overall,   // ← new field
+                    completed: overall,          // keep compatibility
+                };
+            });
+
+            res.json(users);
+        }
+    );
 });
 
 router.get("/users/:uid", (req, res) => {
@@ -197,43 +240,81 @@ router.get("/users/:uid", (req, res) => {
 
                 // 4. Recent activity (last 10 events)
                 db.all(
-                    `SELECT event_type, event_data, created_at
-                     FROM user_activity
-                     WHERE firebase_uid = ?
-                     ORDER BY created_at DESC LIMIT 10`,
+                    `SELECT ua.event_type, ua.event_data, ua.created_at,
+                            c.title AS course_title,
+                            q.title AS quiz_title
+                    FROM user_activity ua
+                    LEFT JOIN courses c ON c.id = ua.course_id
+                    LEFT JOIN quizzes q ON q.id = ua.course_id AND ua.event_type LIKE 'quiz%'
+                    WHERE ua.firebase_uid = ?
+                    ORDER BY ua.created_at DESC LIMIT 10`,
                     [uid],
                     (err, activities) => {
                         if (err) activities = [];
 
                         // 5. Session contexts (last 5)
-                        db.all(
+                        db.get(
                             `SELECT * FROM session_context
-                             WHERE firebase_uid = ?
-                             ORDER BY created_at DESC LIMIT 5`,
+                            WHERE firebase_uid = ?
+                            ORDER BY created_at DESC LIMIT 1`,
                             [uid],
-                            (err, sessions) => {
-                                if (err) sessions = [];
+                            (err, sessionRow) => {
+                                if (err) console.error("Erreur session:", err);
+                                const sessions = sessionRow ? [sessionRow] : [];
 
                                 // 6. ARCS responses (last 5)
                                 db.all(
                                     `SELECT * FROM arcs_responses
-                                     WHERE firebase_uid = ?
-                                     ORDER BY created_at DESC LIMIT 5`,
+                                    WHERE firebase_uid = ?
+                                    ORDER BY created_at DESC LIMIT 5`,
                                     [uid],
                                     (err, arcs) => {
                                         if (err) arcs = [];
 
-                                        res.json({
-                                            user: {
-                                                ...user,
-                                                total_time_watched: totalTimeFormatted,
-                                                total_seconds: totalSeconds,
-                                            },
-                                            courses: courses || [],
-                                            activities: activities || [],
-                                            sessions: sessions || [],
-                                            arcs: arcs || [],
-                                        });
+                                        // NEW: Quiz attempts with scores
+                                        db.all(
+                                            `SELECT q.id AS quiz_id, q.title, q.description,
+                                                    cat.name AS category_name,
+                                                    COUNT(ua.id) AS total_questions,
+                                                    SUM(ua.is_correct) AS correct_answers,
+                                                    CASE WHEN COUNT(ua.id) > 0
+                                                        THEN ROUND((SUM(ua.is_correct) * 100.0) / COUNT(ua.id))
+                                                        ELSE 0 END AS score
+                                            FROM user_answers ua
+                                            JOIN questions qu ON qu.id = ua.question_id
+                                            JOIN quizzes q ON q.id = qu.quiz_id
+                                            LEFT JOIN categories cat ON cat.id = q.category_id
+                                            WHERE ua.firebase_uid = ?
+                                            GROUP BY q.id
+                                            ORDER BY MAX(ua.answered_at) DESC`,
+                                            [uid],
+                                            (err, quizzes) => {
+                                                if (err) quizzes = [];
+
+                                                // 7. User badges (unchanged)
+                                                db.all(
+                                                    `SELECT b.id, b.name, b.description, b.icon, b.category, ub.earned_at
+                                                    FROM user_badges ub
+                                                    JOIN badges b ON b.id = ub.badge_id
+                                                    WHERE ub.firebase_uid = ?
+                                                    ORDER BY ub.earned_at DESC`,
+                                                    [uid],
+                                                    (err, badges) => {
+                                                        if (err) badges = [];
+
+                                                        res.json({
+                                                            user: { ...user, total_time_watched: totalTimeFormatted, total_seconds: totalSeconds },
+                                                            courses: courses || [],
+                                                            activities: activities || [],
+                                                            sessions: sessions || [],
+                                                            arcs: arcs || [],
+                                                            badges: badges || [],
+                                                            quizzes: quizzes || [],   // ← NEW
+                                                        });
+                                                    }
+                                                );
+                                            }
+                                        );
                                     }
                                 );
                             }

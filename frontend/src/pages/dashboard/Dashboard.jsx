@@ -10,6 +10,7 @@ import {
   FaWifi,
   FaHeadphones,
   FaLightbulb,
+  FaQuestionCircle,
 } from "react-icons/fa";
 import Header from "../../components/Header";
 import useRealDashboardData from "../../hooks/useRealDashboardData";
@@ -18,14 +19,14 @@ import useAuth from "../../hooks/useAuth";
 // ---- Simple line chart (unchanged) ----
 const LineChart = ({ data }) => {
   if (!data || !data.length) data = [0, 0, 0, 0, 0, 0, 0];
-  const width = 280, height = 120, maxVal = 100;
+  const width = 280, height = 120, maxVal = Math.max(...data, 1);
   const points = data
     .map((val, i) => `${(i / (data.length - 1)) * width},${height - (val / maxVal) * height}`)
     .join(" ");
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-32">
       {[0, 25, 50, 75, 100].map((p) => (
-        <line key={p} x1="0" y1={height - (p / maxVal) * height} x2={width} y2={height - (p / maxVal) * height} stroke="#E5E7EB" strokeWidth="1" strokeDasharray="4" />
+        <line key={p} x1="0" y1={height - (p / 100) * height} x2={width} y2={height - (p / 100) * height} stroke="#E5E7EB" strokeWidth="1" strokeDasharray="4" />
       ))}
       <polyline points={points} fill="none" stroke="#5B4BFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
       {data.map((val, i) => (
@@ -38,22 +39,17 @@ const LineChart = ({ data }) => {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { data, loading } = useRealDashboardData();
-  const { userData } = useAuth();            // get userData to know the group
+  const { userData } = useAuth();
   const isGroupA = userData?.ab_group === "A";
 
   // ----- CONTEXT DETECTION (unchanged) -----
-  const [context, setContext] = useState({
-    device: "Détection...",
-    connection: "Détection...",
-    noise: "Détection...",
-  });
+  const [context, setContext] = useState({ device: "Détection...", connection: "Détection...", noise: "Détection..." });
   const [detecting, setDetecting] = useState(false);
 
   const detectContext = async () => {
     setDetecting(true);
     setContext({ device: "Détection...", connection: "Détection...", noise: "Détection..." });
 
-    // 1. Device
     const userAgent = navigator.userAgent;
     const width = window.innerWidth;
     let device = "Desktop";
@@ -61,7 +57,6 @@ export default function Dashboard() {
       device = width < 768 ? "Mobile" : "Tablette";
     }
 
-    // 2. Network
     let connection = "Inconnu";
     if (navigator.connection) {
       const conn = navigator.connection;
@@ -85,7 +80,6 @@ export default function Dashboard() {
       connection = "Connecté";
     }
 
-    // 3. Noise
     let noise = "Non disponible";
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -114,7 +108,6 @@ export default function Dashboard() {
 
   useEffect(() => { detectContext(); }, []);
 
-  // ---- Loading ----
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -123,42 +116,42 @@ export default function Dashboard() {
     );
   }
 
-  // ---- KPI cards ----
+  // ---- KPI cards – real values + functional links ----
   const stats = [
     {
       icon: FaBookOpen,
       color: "bg-indigo-100 text-indigo-600",
       value: data?.totalCourses ?? 0,
-      label: "Cours suivis",
-      link: "Voir tout →",
+      label: "Cours commencés",
+      onClick: () => navigate("/courses"),
     },
     {
       icon: FaCheckCircle,
       color: "bg-green-100 text-green-600",
-      value: `${data?.successRate ?? 0}%`,
-      label: "Taux de réussite",
-      link: "Voir détails →",
+      value: data?.completedCourses ?? 0,
+      label: "Cours terminés",
+      onClick: () => navigate("/progress"),
     },
     {
       icon: FaClock,
       color: "bg-yellow-100 text-yellow-600",
       value: data?.timeSpent ?? "0m",
-      label: "Temps total",
-      link: "Voir stats →",
+      label: "Temps total regardé",
+      onClick: () => navigate("/progress"),
     },
     {
       icon: FaTrophy,
       color: "bg-pink-100 text-pink-600",
-      value: data?.badges ?? 0,
-      label: "Badges",
-      link: "Voir badges →",
+      value: `${data?.avgProgress ?? 0}%`,
+      label: "Progression moyenne",
+      onClick: () => navigate("/progress"),
     },
   ];
 
   const weeklyProgress = data?.weeklyProgress ?? [0, 0, 0, 0, 0, 0, 0];
   const days = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
-  // ---- Activity mapping (unchanged) ----
+  // ---- Activity mapping (real) ----
   const mapActivity = (act) => {
     let title = act.event_type;
     let subtitle = "";
@@ -169,7 +162,7 @@ export default function Dashboard() {
       switch (act.event_type) {
         case "started":
           title = "Cours commencé";
-          subtitle = details.progress !== undefined ? `Progression initiale: ${details.progress}%` : "";
+          subtitle = details.progress !== undefined ? `Progression : ${details.progress}%` : "";
           color = "blue";
           status = "En cours";
           break;
@@ -181,21 +174,27 @@ export default function Dashboard() {
           break;
         case "abandoned":
           title = "Cours abandonné";
-          subtitle = `Progression: ${details.progress || 0}%`;
+          subtitle = `Progression : ${details.progress || 0}%`;
           color = "yellow";
           status = "Abandonné";
           break;
         case "blur":
           title = "Perte de focus";
-          subtitle = `Progression: ${details.progress || 0}%`;
+          subtitle = `Progression : ${details.progress || 0}%`;
           color = "yellow";
           status = "En cours";
           break;
         case "focus":
           title = "Retour focus";
-          subtitle = details.blurDurationMs ? `Absence: ${Math.round(details.blurDurationMs / 1000)}s` : "";
+          subtitle = details.blurDurationMs ? `Absence : ${Math.round(details.blurDurationMs / 1000)}s` : "";
           color = "blue";
           status = "En cours";
+          break;
+        case "quiz_submitted":
+          title = "Quiz soumis";
+          subtitle = details.score !== undefined ? `Score : ${details.score}%` : "";
+          color = "purple";
+          status = "Terminé";
           break;
         default:
           title = act.event_type;
@@ -237,17 +236,20 @@ export default function Dashboard() {
             </div>
             <p className="text-xl sm:text-3xl font-extrabold text-gray-900">{stat.value}</p>
             <p className="text-xs sm:text-sm text-gray-500 mt-0.5 sm:mt-1">{stat.label}</p>
-            <button className="text-[#5B4BFF] text-xs font-semibold mt-1 sm:mt-2 hover:underline hidden sm:inline-block">{stat.link}</button>
+            <button
+              onClick={stat.onClick}
+              className="text-[#5B4BFF] text-xs font-semibold mt-1 sm:mt-2 hover:underline hidden sm:inline-block"
+            >
+              Voir plus →
+            </button>
           </div>
         ))}
       </div>
 
       {/* RECOMMENDATION + PROGRESS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6">
-        {/* ---- Conditional recommendation card ---- */}
         <div className="lg:col-span-2 bg-white rounded-[20px] sm:rounded-[24px] p-4 sm:p-6 shadow-sm border border-gray-100 hover-elevate">
           {isGroupA ? (
-            // GROUP A : personalised recommendation
             <>
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-3">
                 <div>
@@ -255,39 +257,58 @@ export default function Dashboard() {
                   <span className="inline-block mt-1 px-2 py-0.5 bg-purple-50 text-purple-700 text-xs rounded-full font-medium">
                     Basé sur votre profil
                   </span>
+                  {data?.predictedType && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      Notre IA a détecté que vous apprenez mieux avec des contenus de type{" "}
+                      <strong className="text-purple-700">{data.predictedType}</strong>.
+                    </p>
+                  )}
                 </div>
               </div>
               {data?.recommendedCourse ? (
                 <div className="flex gap-3">
-                  <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-gray-200 to-gray-100 flex items-center justify-center shrink-0">
-                    <FaPlay className="text-gray-500 text-xl sm:text-2xl" />
-                  </div>
-                  <div className="flex-1">
-                    <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
-                      {data.recommendedCourse.category_name || "Cours"}
-                    </span>
-                    <h4 className="text-lg sm:text-xl font-bold text-gray-900 mt-1">{data.recommendedCourse.title}</h4>
-                    <p className="text-xs sm:text-sm text-gray-500 mt-1 line-clamp-2">{data.recommendedCourse.description}</p>
-                    <div className="flex flex-wrap gap-2 mt-2 text-xs text-gray-400">
-                      <span><strong>Difficulté :</strong> {data.recommendedCourse.level || "Intermédiaire"}</span>
-                      <span><strong>Durée :</strong> {data.recommendedCourse.duration || "—"}</span>
+                    <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-gray-200 to-gray-100 flex items-center justify-center shrink-0">
+                        {data.recommendedCourse.type === "quiz" ? (
+                            <FaQuestionCircle className="text-purple-500 text-xl sm:text-2xl" />
+                        ) : (
+                            <FaPlay className="text-gray-500 text-xl sm:text-2xl" />
+                        )}
                     </div>
-                  </div>
+                    <div className="flex-1">
+                        <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
+                            {data.recommendedCourse.type === "quiz" ? "Quiz" : data.recommendedCourse.category_name || "Cours"}
+                        </span>
+                        <h4 className="text-lg sm:text-xl font-bold text-gray-900 mt-1">{data.recommendedCourse.title}</h4>
+                        <p className="text-xs sm:text-sm text-gray-500 mt-1 line-clamp-2">{data.recommendedCourse.description}</p>
+                        <div className="flex flex-wrap gap-2 mt-2 text-xs text-gray-400">
+                            {data.recommendedCourse.type === "course" && (
+                                <>
+                                    <span><strong>Difficulté :</strong> {data.recommendedCourse.level || "Intermédiaire"}</span>
+                                    <span><strong>Durée :</strong> {data.recommendedCourse.duration || "—"}</span>
+                                </>
+                            )}
+                        </div>
+                    </div>
                 </div>
-              ) : (
+            ) : (
                 <p className="text-gray-400 text-sm">Aucune recommandation pour le moment. Complétez votre profil ou lancez une session.</p>
-              )}
-              {data?.recommendedCourse && (
+            )}
+            {data?.recommendedCourse && (
                 <button
-                  onClick={() => navigate(`/course/${data.recommendedCourse.id}`)}
-                  className="mt-4 w-full sm:w-auto bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold py-2.5 px-5 rounded-xl sm:rounded-2xl shadow-md hover:shadow-lg transition text-sm"
+                    onClick={() => {
+                        if (data.recommendedCourse.type === "quiz") {
+                            navigate(`/quiz/${data.recommendedCourse.id}`);
+                        } else {
+                            navigate(`/course/${data.recommendedCourse.id}`);
+                        }
+                    }}
+                    className="mt-4 w-full sm:w-auto bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold py-2.5 px-5 rounded-xl sm:rounded-2xl shadow-md hover:shadow-lg transition text-sm"
                 >
-                  Commencer →
+                    Commencer →
                 </button>
-              )}
+            )}
             </>
           ) : (
-            // GROUP B : invitation to browse all courses
             <div className="text-center">
               <FaLightbulb className="mx-auto text-4xl text-yellow-500 mb-3" />
               <h3 className="text-lg font-bold text-gray-900 mb-2">Explorez tous les cours disponibles</h3>
@@ -304,7 +325,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Progress chart (unchanged) */}
         <div className="bg-white rounded-[20px] sm:rounded-[24px] p-4 sm:p-6 shadow-sm border border-gray-100 hover-elevate">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-base sm:text-lg font-bold text-gray-900">Votre progression</h3>
@@ -329,9 +349,7 @@ export default function Dashboard() {
           {data?.courses.length ? (
             data.courses.map((course) => (
               <div key={course.id} className="flex items-center gap-3 p-2 sm:p-3 rounded-2xl hover:bg-gray-50 transition">
-                <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-xl shrink-0">
-                  📘
-                </div>
+                <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-xl shrink-0">📘</div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate">{course.title}</p>
                   <div className="mt-1 w-full bg-gray-100 rounded-full h-1.5">

@@ -8,12 +8,15 @@ import {
   FaBell,
   FaStar,
   FaExclamationCircle,
+  FaQuestionCircle,
+  FaClock,
 } from "react-icons/fa";
 import Header from "../../components/Header";
 import useAuth from "../../hooks/useAuth";
 
-// Mapping of notification types to icons and colors
+// Mapping of event types to icons and colors
 const typeConfig = {
+  // Notifications
   welcome: { icon: FaBell, color: "text-yellow-600 bg-yellow-100" },
   course_start: { icon: FaPlay, color: "text-indigo-600 bg-indigo-100" },
   course_completed: { icon: FaCheckCircle, color: "text-green-600 bg-green-100" },
@@ -23,23 +26,71 @@ const typeConfig = {
   reminder: { icon: FaBookOpen, color: "text-blue-600 bg-blue-100" },
   progress_milestone: { icon: FaStar, color: "text-yellow-600 bg-yellow-100" },
   info: { icon: FaBell, color: "text-gray-600 bg-gray-100" },
+
+  // Activity events
+  started: { icon: FaPlay, color: "text-indigo-600 bg-indigo-100" },
+  completed: { icon: FaCheckCircle, color: "text-green-600 bg-green-100" },
+  abandoned: { icon: FaExclamationCircle, color: "text-red-600 bg-red-100" },
+  blur: { icon: FaClock, color: "text-yellow-600 bg-yellow-100" },
+  focus: { icon: FaClock, color: "text-blue-600 bg-blue-100" },
+  quiz_submitted: { icon: FaQuestionCircle, color: "text-purple-600 bg-purple-100" },
 };
+
+function formatEventText(event) {
+  if (event.source === "notification") {
+    return event.message;
+  }
+  const data = typeof event.event_data === "string" ? JSON.parse(event.event_data || "{}") : (event.event_data || {});
+  switch (event.event_type) {
+    case "started":
+      return `Cours commencé${event.course_title ? ` : ${event.course_title}` : ""}`;
+    case "completed":
+      return `Cours terminé${event.course_title ? ` : ${event.course_title}` : ""}`;
+    case "abandoned":
+      return `Cours abandonné${event.course_title ? ` : ${event.course_title}` : ""} (progression: ${data.progress || 0}%)`;
+    case "blur":
+      return `Perte de focus${event.course_title ? ` sur ${event.course_title}` : ""}`;
+    case "focus":
+      return `Retour focus${event.course_title ? ` sur ${event.course_title}` : ""}`;
+    case "quiz_submitted":
+      return `Quiz soumis${event.course_title ? ` : ${event.course_title}` : ""} (score: ${data.score || 0}%)`;
+    default:
+      return event.event_type;
+  }
+}
 
 export default function History() {
   const { currentUser } = useAuth();
-  const [notifications, setNotifications] = useState([]);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!currentUser) return;
     setLoading(true);
-    fetch(`http://localhost:5000/api/notifications/${currentUser.uid}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setNotifications(Array.isArray(data) ? data : []);
+    const uid = currentUser.uid;
+
+    Promise.all([
+      fetch(`http://localhost:5000/api/notifications/${uid}`).then(r => r.json()),
+      fetch(`http://localhost:5000/api/activity/user/${uid}`).then(r => r.json()),
+    ])
+      .then(([notifs, activities]) => {
+        const notifItems = (Array.isArray(notifs) ? notifs : []).map(n => ({
+          ...n,
+          source: "notification",
+          timestamp: n.created_at,
+        }));
+        const activityItems = (Array.isArray(activities) ? activities : []).map(a => ({
+          ...a,
+          source: "activity",
+          timestamp: a.created_at,
+        }));
+        const merged = [...notifItems, ...activityItems].sort(
+          (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+        );
+        setItems(merged);
         setLoading(false);
       })
-      .catch((err) => {
+      .catch(err => {
         console.error("Erreur chargement historique :", err);
         setLoading(false);
       });
@@ -51,35 +102,33 @@ export default function History() {
     const yesterday = new Date(today.getTime() - 86400000);
     const groups = {};
 
-    notifications
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-      .forEach((item) => {
-        const date = new Date(item.created_at + "Z");
-        const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        let key;
-        if (dateOnly.getTime() === today.getTime()) {
-          key = "Aujourd'hui";
-        } else if (dateOnly.getTime() === yesterday.getTime()) {
-          key = "Hier";
+    items.forEach((item) => {
+      const date = new Date(item.timestamp + "Z");
+      const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      let key;
+      if (dateOnly.getTime() === today.getTime()) {
+        key = "Aujourd'hui";
+      } else if (dateOnly.getTime() === yesterday.getTime()) {
+        key = "Hier";
+      } else {
+        const diffDays = Math.floor((today - dateOnly) / 86400000);
+        if (diffDays <= 7) {
+          key = `Il y a ${diffDays} jour${diffDays > 1 ? "s" : ""}`;
         } else {
-          const diffDays = Math.floor((today - dateOnly) / 86400000);
-          if (diffDays <= 7) {
-            key = `Il y a ${diffDays} jour${diffDays > 1 ? "s" : ""}`;
-          } else {
-            key = date.toLocaleDateString("fr-FR", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            });
-          }
+          key = date.toLocaleDateString("fr-FR", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          });
         }
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(item);
-      });
+      }
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    });
 
     return groups;
-  }, [notifications]);
+  }, [items]);
 
   if (loading) {
     return (
@@ -127,11 +176,11 @@ export default function History() {
 
             <div className="space-y-0">
               {items.map((item, idx) => {
-                const config = typeConfig[item.type] || typeConfig.info;
+                const config = typeConfig[item.event_type] || typeConfig[item.type] || typeConfig.info;
                 const IconComponent = config.icon;
                 return (
                   <div
-                    key={item.id}
+                    key={`${item.source}-${item.id}`}
                     className={`flex items-start gap-4 py-3 ${
                       idx !== items.length - 1 ? "border-b border-gray-100" : ""
                     }`}
@@ -143,13 +192,20 @@ export default function History() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div>
-                          <p className="text-sm font-semibold text-gray-900">{item.message}</p>
-                          {item.type && (
-                            <p className="text-xs text-gray-500 capitalize">{item.type.replace("_", " ")}</p>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {formatEventText(item)}
+                          </p>
+                          {item.source === "activity" && item.course_title && (
+                            <p className="text-xs text-gray-500">{item.course_title}</p>
+                          )}
+                          {(item.type || item.event_type) && (
+                            <p className="text-xs text-gray-500 capitalize">
+                              {(item.type || item.event_type).replace(/_/g, " ")}
+                            </p>
                           )}
                         </div>
                         <span className="text-xs text-gray-400 whitespace-nowrap">
-                          {new Date(item.created_at + "Z").toLocaleTimeString("fr-FR", {
+                          {new Date(item.timestamp + "Z").toLocaleTimeString("fr-FR", {
                             hour: "2-digit",
                             minute: "2-digit",
                           })}

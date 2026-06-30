@@ -17,20 +17,17 @@ export default function CoursePlayer() {
   const [progress, setProgress] = useState(0);
   const [relatedCourses, setRelatedCourses] = useState([]);
 
-  // Refs pour la vidéo
   const videoRef = useRef(null);
   const playerRef = useRef(null);
-  const segmentsRef = useRef([]);
-  const currentSegmentStart = useRef(null);
   const startedRef = useRef(false);
   const completedRef = useRef(false);
   const focusLostRef = useRef(false);
 
-  const getCurrentTime = () => {
+  const getCurrentTime = useCallback(() => {
     if (videoRef.current) return videoRef.current.currentTime;
     if (playerRef.current?.getCurrentTime) return playerRef.current.getCurrentTime();
     return null;
-  };
+  }, []);
 
   const logActivity = useCallback(
     (eventType, data = {}) => {
@@ -50,7 +47,7 @@ export default function CoursePlayer() {
     [currentUser, id, userData?.ab_group]
   );
 
-  // Charger le cours et les cours similaires
+  // Load course
   useEffect(() => {
     fetch(`http://localhost:5000/api/courses/${id}`)
       .then(res => res.json())
@@ -72,65 +69,47 @@ export default function CoursePlayer() {
       .catch(() => { setError("Cours introuvable."); setLoading(false); });
   }, [id]);
 
-  // Charger la progression existante
+  // Load existing progress
   useEffect(() => {
     if (!currentUser || !id) return;
     fetch(`http://localhost:5000/api/progress/${currentUser.uid}/${id}`)
       .then(res => res.json())
       .then(data => {
-        if (data) {
-          if (data.progress !== undefined) setProgress(data.progress);
-          if (data.watched_segments) {
-            try {
-              const segs = typeof data.watched_segments === "string"
-                ? JSON.parse(data.watched_segments) : data.watched_segments;
-              segmentsRef.current = segs;
-            } catch { segmentsRef.current = []; }
-          }
-        }
+        if (data && data.progress !== undefined) setProgress(data.progress);
       })
       .catch(console.error);
   }, [currentUser, id]);
 
-  // Segment helpers
-  const startSegment = (time) => {
-    if (currentSegmentStart.current === null && !focusLostRef.current) {
-      currentSegmentStart.current = time;
-    }
-  };
-  const endSegment = (time) => {
-    if (currentSegmentStart.current !== null) {
-      const start = currentSegmentStart.current;
-      const end = time;
-      if (end - start > 1) segmentsRef.current = [...segmentsRef.current, [start, end]];
-      currentSegmentStart.current = null;
-    }
-  };
-
-  const saveSegments = useCallback(() => {
+  // Save progress (simple: always send current time as segment)
+  const saveProgress = useCallback(() => {
     if (!currentUser || !id) return;
-    let allSegments = [...segmentsRef.current];
-    if (currentSegmentStart.current !== null) {
-      const currentTime = getCurrentTime();
-      if (currentTime !== null && currentTime - currentSegmentStart.current > 1) {
-        allSegments = [...allSegments, [currentSegmentStart.current, currentTime]];
-      }
-    }
+    const currentTime = getCurrentTime();
+    if (currentTime === null) return;
+
     fetch("http://localhost:5000/api/progress", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         firebase_uid: currentUser.uid,
         course_id: id,
-        watched_segments: allSegments,
+        watched_segments: [[0, currentTime]],
       }),
     })
       .then(res => res.json())
-      .then(data => { if (data?.progress !== undefined) setProgress(data.progress); })
+      .then(data => {
+        if (data?.progress !== undefined) setProgress(data.progress);
+      })
       .catch(console.error);
   }, [currentUser, id, getCurrentTime]);
 
-  // YouTube
+  // Periodic save every 10s
+  useEffect(() => {
+    if (!course) return;
+    const interval = setInterval(saveProgress, 10000);
+    return () => clearInterval(interval);
+  }, [course, saveProgress]);
+
+  // YouTube helpers
   const isYouTube = (url) => url?.includes("youtube.com") || url?.includes("youtu.be");
   const getYouTubeVideoId = (url) => {
     const regExp = /^.*(?:youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
@@ -138,6 +117,7 @@ export default function CoursePlayer() {
     return match && match[1].length === 11 ? match[1] : null;
   };
 
+  // YouTube player setup (only once, does not depend on saveProgress)
   useEffect(() => {
     if (!course || !isYouTube(course.media)) return;
     const videoId = getYouTubeVideoId(course.media);
@@ -147,30 +127,24 @@ export default function CoursePlayer() {
       if (playerRef.current) playerRef.current.destroy();
       playerRef.current = new window.YT.Player("youtube-player", {
         videoId,
-        events: {
-          onReady: () => {
-            const intervalId = setInterval(() => {
-              const player = playerRef.current;
-              if (player?.getPlayerState && player?.getCurrentTime) {
-                const state = player.getPlayerState();
-                const currentTime = player.getCurrentTime();
-                if (state === 1 && !focusLostRef.current) {
-                  if (currentSegmentStart.current === null) startSegment(currentTime);
-                } else {
-                  endSegment(currentTime);
-                }
-              }
-            }, 2000);
-            const saveIntervalId = setInterval(() => saveSegments(), 10000);
-            return () => { clearInterval(intervalId); clearInterval(saveIntervalId); };
-          },
-          onError: () => setError("Erreur de lecture YouTube."),
+        playerVars: {
+          origin: window.location.origin, // "http://localhost:5173"
         },
+        events: {
+            onReady: () => {
+              if (!startedRef.current) {
+                startedRef.current = true;
+                logActivity("started", { progress: 0 });
+              }
+            },
+            onError: () => setError("Erreur de lecture YouTube."),
+          },
       });
     };
 
-    if (window.YT?.Player) createPlayer();
-    else {
+    if (window.YT?.Player) {
+      createPlayer();
+    } else {
       if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
         const tag = document.createElement("script");
         tag.src = "https://www.youtube.com/iframe_api";
@@ -179,67 +153,94 @@ export default function CoursePlayer() {
       window.onYouTubeIframeAPIReady = createPlayer;
     }
 
-    return () => { if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; } };
-  }, [course, saveSegments, focusLostRef]);
+    return () => {
+      if (playerRef.current) { playerRef.current.destroy(); playerRef.current = null; }
+    };
+  }, [course]);
 
-  // HTML5 handlers
+  // HTML5 event handlers
   const handlePlay = () => {
     if (!startedRef.current) { startedRef.current = true; logActivity("started", { progress: 0 }); }
-    if (videoRef.current) startSegment(videoRef.current.currentTime);
   };
-  const handlePause = () => {
-    if (videoRef.current) endSegment(videoRef.current.currentTime);
-    saveSegments();
-  };
-  const handleSeeked = () => {
-    if (videoRef.current) {
-      endSegment(videoRef.current.currentTime);
-      if (!videoRef.current.paused && !focusLostRef.current) startSegment(videoRef.current.currentTime);
-    }
-  };
-
-  useEffect(() => {
-    if (!course || isYouTube(course.media)) return;
-    const interval = setInterval(() => saveSegments(), 10000);
-    return () => clearInterval(interval);
-  }, [course, saveSegments, isYouTube]);
+  const handlePause = () => saveProgress();
+  const handleEnded = () => saveProgress();
 
   // Focus/blur
   useEffect(() => {
-    const onBlur = () => { focusLostRef.current = true; if (videoRef.current) endSegment(videoRef.current.currentTime); logActivity("blur", { progress }); };
-    const onFocus = () => { focusLostRef.current = false; if (videoRef.current && !videoRef.current.paused) startSegment(videoRef.current.currentTime); };
+    const onBlur = () => { focusLostRef.current = true; };
+    const onFocus = () => { focusLostRef.current = false; };
     window.addEventListener("blur", onBlur); window.addEventListener("focus", onFocus);
     return () => { window.removeEventListener("blur", onBlur); window.removeEventListener("focus", onFocus); };
-  }, [progress, logActivity]);
+  }, []);
 
-  // Abandon
+  // Abandon on unload
   useEffect(() => {
+    let abandonTimeout = null;
+
+    const onBlur = () => {
+      // L'utilisateur a quitté l'onglet. On démarre un chrono.
+      abandonTimeout = setTimeout(() => {
+        // Si après 5 minutes (300s) il n'est pas revenu, on log un abandon
+        logActivity("abandoned", { reason: "window_blur_5min", progress: progress });
+        // Optionnel : envoyer un beacon pour enregistrer l'abandon même si le navigateur ferme
+        navigator.sendBeacon("http://localhost:5000/api/activity", JSON.stringify({
+          firebase_uid: currentUser.uid,
+          course_id: id,
+          event_type: "abandoned",
+          event_data: { progress: progress, reason: "inactive_5min" },
+          ab_group: userData?.ab_group
+        }));
+      }, 300000); // 5 minutes
+    };
+
+    const onFocus = () => {
+      // L'utilisateur est revenu. On annule le timeout d'abandon.
+      if (abandonTimeout) {
+        clearTimeout(abandonTimeout);
+        abandonTimeout = null;
+      }
+    };
+
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+
+    // Gestion propre de l'unload (fermeture du navigateur)
     const handleBeforeUnload = () => {
-      let allSegments = [...segmentsRef.current];
-      if (currentSegmentStart.current !== null) {
-        const currentTime = getCurrentTime();
-        if (currentTime !== null && currentTime - currentSegmentStart.current > 1) {
-          allSegments.push([currentSegmentStart.current, currentTime]);
+      const currentTime = getCurrentTime();
+      if (currentTime) {
+        navigator.sendBeacon("http://localhost:5000/api/progress", JSON.stringify({
+          firebase_uid: currentUser.uid,
+          course_id: id,
+          watched_segments: [[0, currentTime]],
+        }));
+        // On envoie aussi un abandon si le progrès est < 100
+        if (progress < 100) {
+          navigator.sendBeacon("http://localhost:5000/api/activity", JSON.stringify({
+            firebase_uid: currentUser.uid,
+            course_id: id,
+            event_type: "abandoned",
+            event_data: { progress: progress, reason: "browser_close" },
+            ab_group: userData?.ab_group
+          }));
         }
       }
-      navigator.sendBeacon("http://localhost:5000/api/activity", JSON.stringify({
-        firebase_uid: currentUser.uid,
-        course_id: id,
-        event_type: "abandoned",
-        event_data: { progress, watched_segments: allSegments },
-        ab_group: userData?.ab_group,
-      }));
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
+
     return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      if (progress < 100) logActivity("abandoned", { progress });
+      if (abandonTimeout) clearTimeout(abandonTimeout);
     };
-  }, [progress, currentUser, id, userData?.ab_group, logActivity, getCurrentTime]);
+  }, [currentUser, id, getCurrentTime, progress, logActivity, userData?.ab_group]); // Ajoute bien progress dans les dépendances
 
   // Completion
   useEffect(() => {
-    if (progress >= 100 && !completedRef.current) { completedRef.current = true; logActivity("completed", { progress: 100 }); }
+    if (progress >= 100 && !completedRef.current) {
+      completedRef.current = true;
+      logActivity("completed", { progress: 100 });
+    }
   }, [progress, logActivity]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-purple-600 border-t-transparent rounded-full" /></div>;
@@ -249,25 +250,19 @@ export default function CoursePlayer() {
     <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="w-full">
-        {/* Barre de navigation */}
         <div className="w-full bg-white border-b border-gray-200 px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
           <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition">
             <FaArrowLeft /> <span className="text-sm font-medium">Retour</span>
           </button>
           {course.category_name && (
-            <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-medium">
-              {course.category_name}
-            </span>
+            <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-xs font-medium">{course.category_name}</span>
           )}
         </div>
 
-        {/* Vidéo – largeur contrôlée */}
         <div className="max-w-5xl mx-auto mt-4 mb-6 px-4 sm:px-6 lg:px-0">
           <div className="bg-black rounded-2xl overflow-hidden shadow-2xl">
             {isYouTube(course.media) ? (
-              <div className="aspect-video">
-                <div id="youtube-player" className="w-full h-full" />
-              </div>
+              <div className="aspect-video"><div id="youtube-player" className="w-full h-full" /></div>
             ) : course.media ? (
               <video
                 ref={videoRef}
@@ -275,21 +270,18 @@ export default function CoursePlayer() {
                 className="w-full h-auto"
                 onPlay={handlePlay}
                 onPause={handlePause}
-                onSeeked={handleSeeked}
+                onEnded={handleEnded}
                 onError={() => setError("Impossible de charger la vidéo.")}
               >
                 <source src={course.media} />
                 Votre navigateur ne supporte pas la vidéo.
               </video>
             ) : (
-              <div className="aspect-video flex items-center justify-center text-white text-lg">
-                Aucun contenu média
-              </div>
+              <div className="aspect-video flex items-center justify-center text-white text-lg">Aucun contenu média</div>
             )}
           </div>
         </div>
 
-        {/* Détails du cours */}
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-0 pb-6">
           <h1 className="text-2xl font-extrabold text-gray-900">{course.title}</h1>
           <p className="mt-2 text-gray-600 leading-relaxed max-w-3xl">{course.description}</p>
@@ -298,7 +290,6 @@ export default function CoursePlayer() {
             <span className="flex items-center gap-1"><FaClock className="text-purple-500" /> {course.duration || "N/A"}</span>
           </div>
 
-          {/* Progression */}
           <div className="mt-6">
             <div className="flex justify-between text-sm mb-1">
               <span className="font-semibold text-gray-700">Progression</span>
@@ -310,25 +301,39 @@ export default function CoursePlayer() {
           </div>
 
           <button
-            onClick={() => { if (progress < 100) { setProgress(100); segmentsRef.current = [[0, getCurrentTime()]]; saveSegments(); } }}
+            onClick={async () => {
+              if (progress < 100) {
+                try {
+                  const res = await fetch(`http://localhost:5000/api/progress/${id}/complete`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ firebase_uid: currentUser.uid })
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    setProgress(100); // On met à jour l'UI seulement si le backend valide
+                    logActivity("completed", { progress: 100, method: "manual" });
+                  } else {
+                    alert(data.message || "Vous n'avez pas terminé les prérequis (visionnage ≥ 90% ou quiz réussi).");
+                  }
+                } catch (e) {
+                  alert("Erreur lors de la validation");
+                }
+              }
+            }}
             className="mt-6 inline-flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold py-2.5 px-6 rounded-xl shadow-md hover:shadow-lg transition"
           >
             <FaCheck /> Marquer comme terminé
           </button>
         </div>
 
-        {/* Cours similaires */}
         {relatedCourses.length > 0 && (
           <div className="w-full bg-white border-t border-gray-200 py-6">
             <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-0">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Cours similaires</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {relatedCourses.map(c => (
-                  <div
-                    key={c.id}
-                    onClick={() => navigate(`/course/${c.id}`)}
-                    className="bg-gray-50 rounded-xl p-4 cursor-pointer hover:shadow-md transition border border-gray-100"
-                  >
+                  <div key={c.id} onClick={() => navigate(`/course/${c.id}`)} className="bg-gray-50 rounded-xl p-4 cursor-pointer hover:shadow-md transition border border-gray-100">
                     <h3 className="font-semibold text-gray-900 text-sm line-clamp-2">{c.title}</h3>
                     <p className="text-xs text-gray-500 mt-1 line-clamp-2">{c.description}</p>
                     <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">

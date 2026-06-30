@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import Header from "../../components/Header";
 import {
-  FaPlus, FaTrash, FaEdit, FaFolder, FaExternalLinkAlt,
-  FaVideo, FaQuestionCircle, FaTimes, FaSave
+  FaPlus, FaTrash, FaEdit, FaFolder, FaSave,
+  FaExternalLinkAlt, FaVideo,
 } from "react-icons/fa";
 
 export default function AdminCourses() {
@@ -18,15 +18,13 @@ export default function AdminCourses() {
 
   // -- add/edit course modal --
   const [showCourseModal, setShowCourseModal] = useState(false);
-  const [editingCourse, setEditingCourse] = useState(null); // null = add, object = edit
+  const [editingCourse, setEditingCourse] = useState(null);
   const [courseForm, setCourseForm] = useState({
     title: "", level: "", duration: "", description: "", media: "", quiz_link: ""
   });
 
   // --- load categories on mount ---
-  useEffect(() => {
-    fetchCategories();
-  }, []);
+  useEffect(() => { fetchCategories(); }, []);
 
   const fetchCategories = () => {
     setLoading(true);
@@ -36,14 +34,11 @@ export default function AdminCourses() {
         setCategories(Array.isArray(data) ? data : []);
         setLoading(false);
       })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
+      .catch(err => { console.error(err); setLoading(false); });
   };
 
   // --- load courses of a selected category ---
-  const loadCourses = (category) => {
+  const loadCategoryData = (category) => {
     setSelectedCategory(category);
     setLoading(true);
     fetch(`http://localhost:5000/api/admin/categories/${category.id}/courses`)
@@ -52,11 +47,7 @@ export default function AdminCourses() {
         setCourses(Array.isArray(data) ? data : []);
         setLoading(false);
       })
-      .catch(err => {
-        console.error(err);
-        setCourses([]);
-        setLoading(false);
-      });
+      .catch(err => { console.error(err); setCourses([]); setLoading(false); });
   };
 
   // --- add category ---
@@ -72,14 +63,14 @@ export default function AdminCourses() {
     fetchCategories();
   };
 
-  // --- open add modal ---
+  // --- open add course modal ---
   const openAddCourse = () => {
     setEditingCourse(null);
     setCourseForm({ title: "", level: "", duration: "", description: "", media: "", quiz_link: "" });
     setShowCourseModal(true);
   };
 
-  // --- open edit modal ---
+  // --- open edit course modal ---
   const openEditCourse = (course) => {
     setEditingCourse(course);
     setCourseForm({
@@ -93,7 +84,7 @@ export default function AdminCourses() {
     setShowCourseModal(true);
   };
 
-  // --- handle add/edit form submit ---
+  // --- handle add/edit course form submit ---
   const handleCourseSubmit = async () => {
     if (!courseForm.title.trim()) return;
     const payload = {
@@ -104,10 +95,8 @@ export default function AdminCourses() {
       media: courseForm.media,
       quiz_link: courseForm.quiz_link
     };
-
     try {
       if (editingCourse) {
-        // Edit existing
         const res = await fetch(`http://localhost:5000/api/admin/courses/${editingCourse.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -115,7 +104,6 @@ export default function AdminCourses() {
         });
         if (!res.ok) throw new Error("Erreur lors de la mise à jour");
       } else {
-        // Add new
         const res = await fetch(`http://localhost:5000/api/admin/categories/${selectedCategory.id}/courses`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -124,20 +112,18 @@ export default function AdminCourses() {
         if (!res.ok) throw new Error("Erreur lors de l'ajout");
       }
       setShowCourseModal(false);
-      loadCourses(selectedCategory);
-    } catch (err) {
-      alert(err.message);
-    }
+      loadCategoryData(selectedCategory);
+    } catch (err) { alert(err.message); }
   };
 
   // --- delete course ---
   const deleteCourse = async (id) => {
     if (!window.confirm("Supprimer ce cours ?")) return;
     await fetch(`http://localhost:5000/api/admin/courses/${id}`, { method: "DELETE" });
-    loadCourses(selectedCategory);
+    loadCategoryData(selectedCategory);
   };
 
-  // --- loading state ---
+  // ========== LOADING STATE ==========
   if (loading && !selectedCategory) {
     return (
       <div className="flex justify-center py-12">
@@ -165,14 +151,16 @@ export default function AdminCourses() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl sm:text-3xl font-extrabold text-gray-900">Gestion des cours</h2>
-          <p className="text-sm text-gray-500 mt-1">Organisez vos cours par catégories enrichis.</p>
+          <p className="text-sm text-gray-500 mt-1">Organisez vos cours par catégories.</p>
         </div>
-        <button
-          onClick={() => setShowAddCategory(true)}
-          className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-700 shadow-sm"
-        >
-          <FaPlus /> Nouvelle catégorie
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowAddCategory(true)}
+            className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-purple-700 shadow-sm"
+          >
+            <FaPlus /> Nouvelle catégorie
+          </button>
+        </div>
       </div>
 
       {!selectedCategory ? (
@@ -181,7 +169,7 @@ export default function AdminCourses() {
           {categories.map(cat => (
             <div
               key={cat.id}
-              onClick={() => loadCourses(cat)}
+              onClick={() => loadCategoryData(cat)}
               className="bg-white rounded-[24px] p-5 shadow-sm border border-gray-100 hover-elevate cursor-pointer"
             >
               <div className="flex items-center gap-3 mb-3">
@@ -195,7 +183,7 @@ export default function AdminCourses() {
           ))}
         </div>
       ) : (
-        /* Courses table inside selected category */
+        /* Category detail view */
         <>
           <div className="flex items-center justify-between mb-4">
             <button
@@ -212,7 +200,8 @@ export default function AdminCourses() {
             </button>
           </div>
 
-          <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden">
+          {/* Courses table */}
+          <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden mb-6">
             <div className="overflow-x-auto">
               <table className="w-full text-sm table-classic">
                 <thead>
@@ -230,9 +219,7 @@ export default function AdminCourses() {
                   {courses.map(course => (
                     <tr key={course.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-900">{course.title}</td>
-                      <td className="px-4 py-3 text-gray-500 hidden md:table-cell max-w-xs truncate">
-                        {course.description || "—"}
-                      </td>
+                      <td className="px-4 py-3 text-gray-500 hidden md:table-cell max-w-xs truncate">{course.description || "—"}</td>
                       <td className="px-4 py-3 text-gray-600">{course.level || "—"}</td>
                       <td className="px-4 py-3 text-gray-600">{course.duration || "—"}</td>
                       <td className="px-4 py-3 text-center">
@@ -247,7 +234,7 @@ export default function AdminCourses() {
                       <td className="px-4 py-3 text-center">
                         {course.quiz_link ? (
                           <a href={course.quiz_link} target="_blank" rel="noreferrer" className="text-purple-600 hover:underline inline-flex items-center gap-1">
-                            <FaQuestionCircle className="text-sm" /> Lien
+                            <FaExternalLinkAlt className="text-sm" /> Lien
                           </a>
                         ) : (
                           <span className="text-gray-400">—</span>
@@ -255,29 +242,15 @@ export default function AdminCourses() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => openEditCourse(course)}
-                            className="p-2 text-gray-400 hover:text-green-600 transition"
-                            title="Modifier"
-                          >
-                            <FaEdit />
-                          </button>
-                          <button
-                            onClick={() => deleteCourse(course.id)}
-                            className="p-2 text-gray-400 hover:text-red-600 transition"
-                            title="Supprimer"
-                          >
-                            <FaTrash />
-                          </button>
+                          <button onClick={() => openEditCourse(course)} className="p-2 text-gray-400 hover:text-green-600 transition" title="Modifier"><FaEdit /></button>
+                          <button onClick={() => deleteCourse(course.id)} className="p-2 text-gray-400 hover:text-red-600 transition" title="Supprimer"><FaTrash /></button>
                         </div>
                       </td>
                     </tr>
                   ))}
                   {courses.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="text-center py-12 text-gray-500">
-                        Aucun cours dans cette catégorie.
-                      </td>
+                      <td colSpan={7} className="text-center py-12 text-gray-500">Aucun cours dans cette catégorie.</td>
                     </tr>
                   )}
                 </tbody>
@@ -287,18 +260,14 @@ export default function AdminCourses() {
         </>
       )}
 
-      {/* ----- Add Category Modal ----- */}
+      {/* ========== MODALS ========== */}
+
+      {/* Add Category Modal */}
       {showAddCategory && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full">
             <h3 className="text-lg font-bold mb-4">Nouvelle catégorie</h3>
-            <input
-              type="text"
-              value={newCategoryName}
-              onChange={e => setNewCategoryName(e.target.value)}
-              placeholder="Nom de la catégorie"
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 mb-4"
-            />
+            <input type="text" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="Nom de la catégorie" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 mb-4" />
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowAddCategory(false)} className="px-4 py-2 text-sm text-gray-600">Annuler</button>
               <button onClick={handleAddCategory} className="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-semibold">Créer</button>
@@ -307,51 +276,22 @@ export default function AdminCourses() {
         </div>
       )}
 
-      {/* ----- Add/Edit Course Modal ----- */}
+      {/* Add/Edit Course Modal */}
       {showCourseModal && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold mb-4">
-              {editingCourse ? "Modifier le cours" : "Ajouter un cours à " + selectedCategory?.name}
-            </h3>
+            <h3 className="text-lg font-bold mb-4">{editingCourse ? "Modifier le cours" : "Ajouter un cours à " + selectedCategory?.name}</h3>
             <div className="space-y-3">
-              <input
-                type="text" placeholder="Titre du cours *" value={courseForm.title}
-                onChange={e => setCourseForm({ ...courseForm, title: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
-              />
-              <input
-                type="text" placeholder="Niveau (ex: Débutant)" value={courseForm.level}
-                onChange={e => setCourseForm({ ...courseForm, level: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
-              />
-              <input
-                type="text" placeholder="Durée (ex: 2h30)" value={courseForm.duration}
-                onChange={e => setCourseForm({ ...courseForm, duration: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
-              />
-              <textarea
-                placeholder="Description" value={courseForm.description}
-                onChange={e => setCourseForm({ ...courseForm, description: e.target.value })}
-                rows="2"
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 resize-none"
-              />
-              <input
-                type="url" placeholder="Lien média (vidéo/audio)" value={courseForm.media}
-                onChange={e => setCourseForm({ ...courseForm, media: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
-              />
-              <input
-                type="url" placeholder="Lien du quiz" value={courseForm.quiz_link}
-                onChange={e => setCourseForm({ ...courseForm, quiz_link: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
-              />
+              <input type="text" placeholder="Titre du cours *" value={courseForm.title} onChange={e => setCourseForm({ ...courseForm, title: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
+              <input type="text" placeholder="Niveau (ex: Débutant)" value={courseForm.level} onChange={e => setCourseForm({ ...courseForm, level: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
+              <input type="text" placeholder="Durée (ex: 2h30)" value={courseForm.duration} onChange={e => setCourseForm({ ...courseForm, duration: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
+              <textarea placeholder="Description" value={courseForm.description} onChange={e => setCourseForm({ ...courseForm, description: e.target.value })} rows="2" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 resize-none" />
+              <input type="url" placeholder="Lien média (vidéo/audio)" value={courseForm.media} onChange={e => setCourseForm({ ...courseForm, media: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
+              <input type="url" placeholder="Lien du quiz" value={courseForm.quiz_link} onChange={e => setCourseForm({ ...courseForm, quiz_link: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
             </div>
             <div className="flex justify-end gap-2 mt-6">
               <button onClick={() => setShowCourseModal(false)} className="px-4 py-2 text-sm text-gray-600">Annuler</button>
-              <button onClick={handleCourseSubmit} className="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-semibold flex items-center gap-1">
-                <FaSave className="text-xs" /> {editingCourse ? "Enregistrer" : "Ajouter"}
-              </button>
+              <button onClick={handleCourseSubmit} className="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-semibold flex items-center gap-1"><FaSave className="text-xs" /> {editingCourse ? "Enregistrer" : "Ajouter"}</button>
             </div>
           </div>
         </div>

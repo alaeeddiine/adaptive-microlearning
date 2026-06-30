@@ -1,15 +1,12 @@
+// backend/routes/arcs.js
 const express = require("express");
 const router = express.Router();
 const db = require("../database/database");
 
 router.post("/", (req, res) => {
     const {
-        firebase_uid,
-        course_id,
-        attention,
-        relevance,
-        confidence,
-        satisfaction,
+        firebase_uid, course_id,
+        attention, relevance, confidence, satisfaction,
         ab_group,
     } = req.body;
 

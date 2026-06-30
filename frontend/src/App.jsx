@@ -7,6 +7,7 @@ import Courses from "./pages/courses/Courses";
 import CoursePlayer from "./pages/courses/CoursePlayer";
 import Recommendations from "./pages/recommendations/Recommendations";
 import Quiz from "./pages/quiz/Quiz";
+import QuizPlayer from "./pages/quiz/QuizPlayer";
 import Progress from "./pages/progress/Progress";
 import Settings from "./pages/settings/Settings";
 import History from "./pages/history/History";
@@ -18,6 +19,7 @@ import AdminUsers from "./pages/admin/AdminUsers";
 import AdminCourses from "./pages/admin/AdminCourses";
 import AdminUserProgress from "./pages/admin/AdminUserProgress";
 import ProgressManager from "./pages/admin/ProgressManager";
+import AdminQuizzes from "./pages/admin/AdminQuizzes";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import ProtectedAdminRoute from "./components/ProtectedAdminRoute";
@@ -87,6 +89,7 @@ export default function App() {
               needsQuestionnaire ? <Navigate to="/questionnaire" /> : <Quiz />
             }
           />
+          <Route path="/quiz/:id" element={<QuizPlayer />} />
           <Route
             path="/progress"
             element={
@@ -160,6 +163,7 @@ export default function App() {
                 )
               }
             />
+            <Route path="/admin/quizzes" element={<AdminQuizzes />} />
             <Route path="/admin/progress" element={<ProgressManager />} />
           </Route>
         </Route>

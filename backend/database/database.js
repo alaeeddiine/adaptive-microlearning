@@ -176,6 +176,11 @@ db.run(`
     if (err) console.error("Erreur création table session_context :", err.message);
     else console.log("Table 'session_context' prête.");
 });
+db.run(`ALTER TABLE session_context ADD COLUMN duration REAL DEFAULT 0`, (err) => {
+    if (err && !err.message.includes("duplicate column name")) {
+        console.error("Erreur ajout colonne duration:", err.message);
+    }
+});
 
 // ----------------------------------------------------------------------
 // 7. USER_ACTIVITY (logging fin des interactions)
@@ -216,5 +221,67 @@ db.run(`
     if (err) console.error("Erreur création table arcs_responses :", err.message);
     else console.log("Table 'arcs_responses' prête.");
 });
+// Quizzes
+db.run(`
+    CREATE TABLE IF NOT EXISTS quizzes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT,
+        category_id INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (category_id) REFERENCES categories(id)
+    )
+`);
+
+// Questions (one quiz has many questions)
+db.run(`
+    CREATE TABLE IF NOT EXISTS questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        quiz_id INTEGER NOT NULL,
+        question_text TEXT NOT NULL,
+        option_a TEXT NOT NULL,
+        option_b TEXT NOT NULL,
+        option_c TEXT NOT NULL,
+        option_d TEXT NOT NULL,
+        correct_option TEXT NOT NULL CHECK(correct_option IN ('A','B','C','D')),
+        FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE
+    )
+`);
+
+// User quiz attempts
+db.run(`
+    CREATE TABLE IF NOT EXISTS user_answers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firebase_uid TEXT NOT NULL,
+        quiz_id INTEGER NOT NULL,
+        question_id INTEGER NOT NULL,
+        selected_option TEXT,
+        is_correct INTEGER DEFAULT 0,
+        answered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid),
+        FOREIGN KEY (quiz_id) REFERENCES quizzes(id),
+        FOREIGN KEY (question_id) REFERENCES questions(id)
+    )
+`);
+db.run(`
+    CREATE TABLE IF NOT EXISTS badges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        icon TEXT,
+        category TEXT
+    )
+`);
+
+db.run(`
+    CREATE TABLE IF NOT EXISTS user_badges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        firebase_uid TEXT NOT NULL,
+        badge_id INTEGER NOT NULL,
+        earned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid),
+        FOREIGN KEY (badge_id) REFERENCES badges(id)
+    )
+`);
 
 module.exports = db;

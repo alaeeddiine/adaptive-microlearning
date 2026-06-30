@@ -2,6 +2,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Header from "../../components/Header";
 import useAuth from "../../hooks/useAuth";
+import ArcsModal from "../../components/ArcsModal";
 import {
   FaArrowLeft, FaClock, FaBrain, FaCheck,
 } from "react-icons/fa";
@@ -16,6 +17,7 @@ export default function CoursePlayer() {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(0);
   const [relatedCourses, setRelatedCourses] = useState([]);
+  const [showArcs, setShowArcs] = useState(false);
 
   const videoRef = useRef(null);
   const playerRef = useRef(null);
@@ -80,7 +82,7 @@ export default function CoursePlayer() {
       .catch(console.error);
   }, [currentUser, id]);
 
-  // Save progress (simple: always send current time as segment)
+  // Save progress
   const saveProgress = useCallback(() => {
     if (!currentUser || !id) return;
     const currentTime = getCurrentTime();
@@ -117,7 +119,7 @@ export default function CoursePlayer() {
     return match && match[1].length === 11 ? match[1] : null;
   };
 
-  // YouTube player setup (only once, does not depend on saveProgress)
+  // YouTube player setup
   useEffect(() => {
     if (!course || !isYouTube(course.media)) return;
     const videoId = getYouTubeVideoId(course.media);
@@ -128,7 +130,7 @@ export default function CoursePlayer() {
       playerRef.current = new window.YT.Player("youtube-player", {
         videoId,
         playerVars: {
-          origin: window.location.origin, // "http://localhost:5173"
+          origin: window.location.origin,
         },
         events: {
             onReady: () => {
@@ -178,11 +180,8 @@ export default function CoursePlayer() {
     let abandonTimeout = null;
 
     const onBlur = () => {
-      // L'utilisateur a quitté l'onglet. On démarre un chrono.
       abandonTimeout = setTimeout(() => {
-        // Si après 5 minutes (300s) il n'est pas revenu, on log un abandon
         logActivity("abandoned", { reason: "window_blur_5min", progress: progress });
-        // Optionnel : envoyer un beacon pour enregistrer l'abandon même si le navigateur ferme
         navigator.sendBeacon("http://localhost:5000/api/activity", JSON.stringify({
           firebase_uid: currentUser.uid,
           course_id: id,
@@ -194,7 +193,6 @@ export default function CoursePlayer() {
     };
 
     const onFocus = () => {
-      // L'utilisateur est revenu. On annule le timeout d'abandon.
       if (abandonTimeout) {
         clearTimeout(abandonTimeout);
         abandonTimeout = null;
@@ -204,7 +202,6 @@ export default function CoursePlayer() {
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
 
-    // Gestion propre de l'unload (fermeture du navigateur)
     const handleBeforeUnload = () => {
       const currentTime = getCurrentTime();
       if (currentTime) {
@@ -213,7 +210,6 @@ export default function CoursePlayer() {
           course_id: id,
           watched_segments: [[0, currentTime]],
         }));
-        // On envoie aussi un abandon si le progrès est < 100
         if (progress < 100) {
           navigator.sendBeacon("http://localhost:5000/api/activity", JSON.stringify({
             firebase_uid: currentUser.uid,
@@ -233,15 +229,32 @@ export default function CoursePlayer() {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       if (abandonTimeout) clearTimeout(abandonTimeout);
     };
-  }, [currentUser, id, getCurrentTime, progress, logActivity, userData?.ab_group]); // Ajoute bien progress dans les dépendances
+  }, [currentUser, id, getCurrentTime, progress, logActivity, userData?.ab_group]);
 
-  // Completion
+  // Completion – trigger ARCS modal for both groups
   useEffect(() => {
     if (progress >= 100 && !completedRef.current) {
       completedRef.current = true;
       logActivity("completed", { progress: 100 });
+      setTimeout(() => setShowArcs(true), 1500);
     }
   }, [progress, logActivity]);
+
+  // ARCS submit handler
+  const handleArcsSubmit = (ratings) => {
+    fetch("http://localhost:5000/api/arcs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firebase_uid: currentUser.uid,
+        course_id: id,
+        ...ratings,
+        ab_group: userData?.ab_group,
+      }),
+    })
+      .then(() => setShowArcs(false))
+      .catch(console.error);
+  };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin h-8 w-8 border-4 border-purple-600 border-t-transparent rounded-full" /></div>;
   if (error || !course) return <div className="min-h-screen flex flex-col items-center justify-center"><p className="text-red-600">{error || "Cours non disponible"}</p><button onClick={() => navigate("/courses")} className="mt-4 px-4 py-2 bg-gray-200 rounded-xl">Retour aux cours</button></div>;
@@ -311,7 +324,7 @@ export default function CoursePlayer() {
                   });
                   const data = await res.json();
                   if (data.success) {
-                    setProgress(100); // On met à jour l'UI seulement si le backend valide
+                    setProgress(100);
                     logActivity("completed", { progress: 100, method: "manual" });
                   } else {
                     alert(data.message || "Vous n'avez pas terminé les prérequis (visionnage ≥ 90% ou quiz réussi).");
@@ -347,6 +360,13 @@ export default function CoursePlayer() {
           </div>
         )}
       </div>
+
+      {/* ARCS Modal */}
+      <ArcsModal
+        isOpen={showArcs}
+        onClose={() => setShowArcs(false)}
+        onSubmit={handleArcsSubmit}
+      />
     </div>
   );
 }

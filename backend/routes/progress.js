@@ -38,7 +38,7 @@ function parseDuration(dur) {
     return 0;
 }
 
-// ---------- POST – save progress ----------
+// ---------- POST – save progress + badge awarding ----------
 router.post("/", (req, res) => {
     const { firebase_uid, course_id, watched_segments } = req.body;
     if (!firebase_uid || !course_id) return res.status(400).json({ message: "Missing fields" });
@@ -70,12 +70,49 @@ router.post("/", (req, res) => {
         `;
         db.run(sql, [firebase_uid, course_id, progress, JSON.stringify(segments)], function (err) {
             if (err) return res.status(500).json({ message: err.message });
+
+            // --- Badge awarding logic ---
+            db.get("SELECT COUNT(*) AS started FROM user_progress WHERE firebase_uid = ?", [firebase_uid], (err, startedRow) => {
+                if (err) return;
+                const started = startedRow?.count || 0;
+                db.get("SELECT COUNT(*) AS completed FROM user_progress WHERE firebase_uid = ? AND progress >= 100", [firebase_uid], (err, completedRow) => {
+                    if (err) return;
+                    const completed = completedRow?.count || 0;
+
+                    const newBadgeIds = [];
+                    if (started >= 1) newBadgeIds.push(1);
+                    if (started >= 3) newBadgeIds.push(2);
+                    if (completed >= 1) newBadgeIds.push(3);
+                    if (completed >= 3) newBadgeIds.push(4);
+
+                    // Insert missing badges + notification
+                    newBadgeIds.forEach(badgeId => {
+                        db.run(
+                            "INSERT OR IGNORE INTO user_badges (firebase_uid, badge_id) VALUES (?, ?)",
+                            [firebase_uid, badgeId],
+                            function (err) {
+                                if (!err && this.changes > 0) {
+                                    db.get("SELECT name FROM badges WHERE id = ?", [badgeId], (err, badgeRow) => {
+                                        if (err || !badgeRow) return;
+                                        const message = `🏆 Félicitations ! Vous avez obtenu le badge "${badgeRow.name}".`;
+                                        db.run(
+                                            "INSERT INTO notifications (firebase_uid, message, type) VALUES (?, ?, 'badge_earned')",
+                                            [firebase_uid, message]
+                                        );
+                                    });
+                                }
+                            }
+                        );
+                    });
+                });
+            });
+
             res.json({ message: "Progress saved", progress });
         });
     });
 });
 
-// ---------- GET – aggregated stats for a user (must be BEFORE the dynamic route) ----------
+// ---------- GET – aggregated stats for a user ----------
 router.get("/stats/:uid", (req, res) => {
     const { uid } = req.params;
     db.all(
@@ -103,7 +140,6 @@ router.get("/stats/:uid", (req, res) => {
             const minutes = Math.floor((totalWatchTime % 3600) / 60);
             const formattedTime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
-            // Get real badge count
             db.get("SELECT COUNT(*) AS count FROM user_badges WHERE firebase_uid = ?", [uid], (err, badgeRow) => {
                 const badgeCount = err ? 0 : (badgeRow?.count || 0);
 
@@ -111,7 +147,7 @@ router.get("/stats/:uid", (req, res) => {
                     avgProgress,
                     totalWatchTime: formattedTime,
                     completedCourses,
-                    badges: badgeCount,   // ← real number now
+                    badges: badgeCount,
                     courseCount,
                 });
             });
@@ -168,9 +204,44 @@ router.post("/:courseId/complete", (req, res) => {
             return res.status(400).json({ success: false, message: "Vous devez avoir regardé au moins 90% du contenu." });
         }
 
-        // Update without using 'status' column
         db.run("UPDATE user_progress SET progress = 100 WHERE firebase_uid = ? AND course_id = ?", [firebase_uid, courseId], function(err) {
             if (err) return res.status(500).json({ message: err.message });
+
+            // Also trigger badge awarding after manual completion
+            db.get("SELECT COUNT(*) AS started FROM user_progress WHERE firebase_uid = ?", [firebase_uid], (err, startedRow) => {
+                if (err) return;
+                const started = startedRow?.count || 0;
+                db.get("SELECT COUNT(*) AS completed FROM user_progress WHERE firebase_uid = ? AND progress >= 100", [firebase_uid], (err, completedRow) => {
+                    if (err) return;
+                    const completed = completedRow?.count || 0;
+
+                    const newBadgeIds = [];
+                    if (started >= 1) newBadgeIds.push(1);
+                    if (started >= 3) newBadgeIds.push(2);
+                    if (completed >= 1) newBadgeIds.push(3);
+                    if (completed >= 3) newBadgeIds.push(4);
+
+                    newBadgeIds.forEach(badgeId => {
+                        db.run(
+                            "INSERT OR IGNORE INTO user_badges (firebase_uid, badge_id) VALUES (?, ?)",
+                            [firebase_uid, badgeId],
+                            function (err) {
+                                if (!err && this.changes > 0) {
+                                    db.get("SELECT name FROM badges WHERE id = ?", [badgeId], (err, badgeRow) => {
+                                        if (err || !badgeRow) return;
+                                        const message = `🏆 Félicitations ! Vous avez obtenu le badge "${badgeRow.name}".`;
+                                        db.run(
+                                            "INSERT INTO notifications (firebase_uid, message, type) VALUES (?, ?, 'badge_earned')",
+                                            [firebase_uid, message]
+                                        );
+                                    });
+                                }
+                            }
+                        );
+                    });
+                });
+            });
+
             res.json({ success: true, progress: 100 });
         });
     });

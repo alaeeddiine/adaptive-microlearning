@@ -41,10 +41,13 @@ export default function AdminUsers() {
       const res = await fetch(`http://localhost:5000/api/admin/users/${uid}`, {
         method: "DELETE",
       });
-      if (!res.ok) throw new Error("Erreur lors de la suppression");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Erreur lors de la suppression");
+      }
       setUsers((prev) => prev.filter((u) => u.firebase_uid !== uid));
     } catch (err) {
-      alert(err.message);
+      alert(err.message || "Erreur lors de la suppression");
     }
   };
 

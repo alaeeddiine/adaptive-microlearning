@@ -18,6 +18,8 @@ export default function CoursePlayer() {
   const [progress, setProgress] = useState(0);
   const [relatedCourses, setRelatedCourses] = useState([]);
   const [showArcs, setShowArcs] = useState(false);
+  const [arcsChecked, setArcsChecked] = useState(false);
+  const [hasArcsResponse, setHasArcsResponse] = useState(false);
 
   const videoRef = useRef(null);
   const playerRef = useRef(null);
@@ -50,6 +52,12 @@ export default function CoursePlayer() {
   );
 
   useEffect(() => {
+    startedRef.current = false;
+    completedRef.current = false;
+    setShowArcs(false);
+    setArcsChecked(false);
+    setHasArcsResponse(false);
+
     fetch(`http://localhost:5000/api/courses/${id}`)
       .then(res => res.json())
       .then(data => {
@@ -78,6 +86,23 @@ export default function CoursePlayer() {
         if (data && data.progress !== undefined) setProgress(data.progress);
       })
       .catch(console.error);
+  }, [currentUser, id]);
+
+  useEffect(() => {
+    if (!currentUser || !id) return;
+    setArcsChecked(false);
+    setHasArcsResponse(false);
+
+    fetch(`http://localhost:5000/api/arcs/status?firebase_uid=${encodeURIComponent(currentUser.uid)}&course_id=${encodeURIComponent(id)}`)
+      .then(res => res.json())
+      .then(data => {
+        setHasArcsResponse(Boolean(data?.hasResponse));
+        setArcsChecked(true);
+      })
+      .catch(() => {
+        setHasArcsResponse(false);
+        setArcsChecked(true);
+      });
   }, [currentUser, id]);
 
   const saveProgress = useCallback(() => {
@@ -237,12 +262,13 @@ export default function CoursePlayer() {
   }, [currentUser, id, getCurrentTime, progress, logActivity, userData?.ab_group]);
 
   useEffect(() => {
+    if (!arcsChecked || hasArcsResponse) return;
     if (progress >= 100 && !completedRef.current) {
       completedRef.current = true;
       logActivity("completed", { progress: 100 });
       setTimeout(() => setShowArcs(true), 1500);
     }
-  }, [progress, logActivity]);
+  }, [progress, logActivity, arcsChecked, hasArcsResponse]);
 
   const handleArcsSubmit = (ratings) => {
     fetch("http://localhost:5000/api/arcs", {
@@ -255,7 +281,10 @@ export default function CoursePlayer() {
         ab_group: userData?.ab_group,
       }),
     })
-      .then(() => setShowArcs(false))
+      .then(() => {
+        setHasArcsResponse(true);
+        setShowArcs(false);
+      })
       .catch(console.error);
   };
 
@@ -266,6 +295,12 @@ export default function CoursePlayer() {
   if (error || !course) {
     return <div className="min-h-screen flex flex-col items-center justify-center"><p className="text-red-600">{error || "Cours non disponible"}</p><button onClick={() => navigate("/courses")} className="mt-4 px-4 py-2 bg-gray-200 rounded-xl">Retour aux cours</button></div>;
   }
+
+  const isDocumentCourse =
+    course.course_type === "text" ||
+    course.course_type === "infographie" ||
+    /\.pdf($|\?)/i.test(course.media || "") ||
+    /^data:application\/pdf/i.test(course.media || "");
 
   return (
     <div className="min-h-screen bg-white">
@@ -287,6 +322,12 @@ export default function CoursePlayer() {
                 <div className="aspect-video">
                   <div id="youtube-player" className="w-full h-full" />
                 </div>
+              ) : isDocumentCourse ? (
+                <iframe
+                  src={course.media}
+                  title={course.title}
+                  className="w-full min-h-[70vh] bg-white"
+                />
               ) : course.media ? (
                 <video
                   ref={videoRef}

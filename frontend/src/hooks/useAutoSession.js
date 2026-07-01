@@ -42,10 +42,12 @@ export default function useAutoSession() {
 
             // ---- Battery (wait for result) ----
             let battery_level = "Non disponible";
+            let battery_percent = null;
             try {
                 if (navigator.getBattery) {
                     const battery = await navigator.getBattery();
                     const level = battery.level * 100;
+                    battery_percent = Math.round(level);
                     if (level < 25) battery_level = "Faible";
                     else if (level < 70) battery_level = "Moyenne";
                     else battery_level = "Élevé";
@@ -65,6 +67,7 @@ export default function useAutoSession() {
                     connection_level,
                     time_of_day,
                     battery_level,
+                    battery_percent,
                 }),
             }).catch(console.error);
         };

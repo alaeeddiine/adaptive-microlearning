@@ -55,7 +55,7 @@ export default function AdminUserProgress() {
     );
   }
 
-  const { user, courses, activities, sessions, arcs, badges, quizzes } = data;
+  const { user, courses, activities, sessions, sessionSummary, arcs, badges, quizzes } = data;
 
   const totalCourses = courses.length;
   const completedCourses = courses.filter(c => c.progress >= 100).length;
@@ -304,19 +304,69 @@ export default function AdminUserProgress() {
         <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
           <FaClock className="text-purple-600" /> Sessions enregistrées
         </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+          <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4">
+            <p className="text-xs text-gray-500 mb-1">Contexte actuel détecté</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {sessionSummary?.currentContext
+                ? `${sessionSummary.currentContext.device_type || "—"} · ${sessionSummary.currentContext.connection_level || "—"}`
+                : "Aucun contexte détecté"}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {sessionSummary?.currentContext?.time_of_day || "—"}
+            </p>
+            <p className="text-sm font-bold text-gray-900 mt-2">
+              {sessionSummary?.currentSessionDuration || "0m"}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4">
+            <p className="text-xs text-gray-500 mb-1">Batterie moyenne</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {sessionSummary?.averageBatteryPercent != null
+                ? `Moyenne (${sessionSummary.averageBatteryPercent}%)`
+                : "Non disponible"}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {sessionSummary?.currentBatteryPercent != null
+                ? `Actuelle (${sessionSummary.currentBatteryPercent}%)`
+                : sessionSummary?.currentBatteryLevel || "—"}
+            </p>
+          </div>
+          <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4">
+            <p className="text-xs text-gray-500 mb-1">Temps moyen / jour</p>
+            <p className="text-sm font-semibold text-gray-900">{sessionSummary?.averageDailyFormatted || "0m"}</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {sessionSummary?.activeSessionsCount || 0} sessions actives sur {sessionSummary?.activeDaysCount || 0} jour(s)
+            </p>
+          </div>
+        </div>
+
         {sessions.length === 0 ? (
           <p className="text-gray-400 text-sm">Aucune session enregistrée.</p>
         ) : (
-          <div className="space-y-3">
-            {sessions.map((sess, idx) => (
-              <div key={idx} className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
-                <div className="flex items-center gap-1"><FaClock className="text-gray-400" /> {sess.time_available}</div>
-                <div className="flex items-center gap-1"><FaWifi className="text-gray-400" /> {sess.connection_level}</div>
-                <div className="flex items-center gap-1"><FaMobileAlt className="text-gray-400" /> {sess.device_type}</div>
-                <div className="flex items-center gap-1"><FaBatteryFull className="text-gray-400" /> {sess.battery_level}</div>
-                <div className="flex items-center gap-1"><FaSun className="text-gray-400" /> {sess.time_of_day}</div>
-              </div>
-            ))}
+          <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+            {(() => {
+              const sess = sessions[0];
+              return (
+                <>
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {new Date(sess.created_at).toLocaleString("fr-FR")}
+                    </p>
+                    <span className="text-xs px-2 py-1 rounded-full bg-white border border-gray-200 text-gray-600">
+                      {sessionSummary?.currentSessionDuration || "0m"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                    <div className="flex items-center gap-1"><FaClock className="text-gray-400" /> {sessionSummary?.currentSessionDuration || "0m"}</div>
+                    <div className="flex items-center gap-1"><FaWifi className="text-gray-400" /> {sess.connection_level}</div>
+                    <div className="flex items-center gap-1"><FaMobileAlt className="text-gray-400" /> {sess.device_type}</div>
+                    <div className="flex items-center gap-1"><FaBatteryFull className="text-gray-400" /> {sess.battery_percent != null ? `${Math.round(sess.battery_percent)}%` : sess.battery_level}</div>
+                    <div className="flex items-center gap-1"><FaSun className="text-gray-400" /> {sess.time_of_day}</div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>

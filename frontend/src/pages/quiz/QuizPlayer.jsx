@@ -94,7 +94,7 @@ export default function QuizPlayer() {
 
   if (submitted && result) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-white">
         <Header />
         <div className="max-w-lg mx-auto p-6 mt-12 bg-white rounded-2xl shadow-sm border text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Résultat</h2>
@@ -112,7 +112,7 @@ export default function QuizPlayer() {
   if (!currentQuestion) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white">
       <Header />
       <div className="max-w-lg mx-auto p-4 sm:p-6 mt-6">
         <button onClick={() => navigate("/quiz")} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4">

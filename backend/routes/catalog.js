@@ -7,7 +7,7 @@ router.get("/:uid", (req, res) => {
 
     // 1. Courses with progress
     db.all(
-        `SELECT c.id, c.title, c.description, c.level, c.duration, c.media, c.quiz_link,
+        `SELECT c.id, c.title, c.description, c.level, c.duration, c.media, c.quiz_link, c.course_type,
                 c.category_id, cat.name AS category_name,
                 COALESCE(up.progress, 0) AS progress
          FROM courses c

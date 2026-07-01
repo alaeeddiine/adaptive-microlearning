@@ -79,6 +79,7 @@ db.run(`
         description TEXT,
         media TEXT,
         quiz_link TEXT,
+        course_type TEXT DEFAULT 'video',
         progress INTEGER DEFAULT 0,
         completed INTEGER DEFAULT 0,
         FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid),
@@ -96,6 +97,7 @@ const courseColumns = [
     { name: "description", type: "TEXT" },
     { name: "media", type: "TEXT" },
     { name: "quiz_link", type: "TEXT" },
+    { name: "course_type", type: "TEXT DEFAULT 'video'" },
     { name: "level", type: "TEXT" },
     { name: "duration", type: "TEXT" },
 ];
@@ -168,6 +170,7 @@ db.run(`
         connection_level TEXT,
         device_type TEXT,
         battery_level TEXT,
+        battery_percent REAL,
         time_of_day TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (firebase_uid) REFERENCES users(firebase_uid)
@@ -179,6 +182,11 @@ db.run(`
 db.run(`ALTER TABLE session_context ADD COLUMN duration REAL DEFAULT 0`, (err) => {
     if (err && !err.message.includes("duplicate column name")) {
         console.error("Erreur ajout colonne duration:", err.message);
+    }
+});
+db.run(`ALTER TABLE session_context ADD COLUMN battery_percent REAL`, (err) => {
+    if (err && !err.message.includes("duplicate column name")) {
+        console.error("Erreur ajout colonne battery_percent:", err.message);
     }
 });
 
@@ -220,6 +228,26 @@ db.run(`
 `, (err) => {
     if (err) console.error("Erreur création table arcs_responses :", err.message);
     else console.log("Table 'arcs_responses' prête.");
+});
+
+db.run(`
+    DELETE FROM arcs_responses
+    WHERE id NOT IN (
+        SELECT MIN(id)
+        FROM arcs_responses
+        GROUP BY firebase_uid, course_id
+    )
+`, (err) => {
+    if (err) console.error("Erreur nettoyage arcs_responses:", err.message);
+});
+
+db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_arcs_responses_user_course
+    ON arcs_responses(firebase_uid, course_id)
+`, (err) => {
+    if (err && !err.message.includes("already exists")) {
+        console.error("Erreur index arcs_responses:", err.message);
+    }
 });
 // Quizzes
 db.run(`
@@ -283,5 +311,22 @@ db.run(`
         FOREIGN KEY (badge_id) REFERENCES badges(id)
     )
 `);
+db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_badges_unique
+    ON user_badges(firebase_uid, badge_id)
+`, (err) => {
+    if (err) console.error("Erreur index unique user_badges :", err.message);
+});
+
+db.run(`
+    DELETE FROM user_badges
+    WHERE id NOT IN (
+        SELECT MIN(id)
+        FROM user_badges
+        GROUP BY firebase_uid, badge_id
+    )
+`, (err) => {
+    if (err) console.error("Erreur nettoyage doublons user_badges :", err.message);
+});
 
 module.exports = db;

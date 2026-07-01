@@ -2,29 +2,69 @@ import { useState, useEffect } from "react";
 import Header from "../../components/Header";
 import {
   FaPlus, FaTrash, FaEdit, FaFolder, FaSave,
-  FaExternalLinkAlt, FaVideo,
+  FaVideo, FaFilePdf, FaImage,
 } from "react-icons/fa";
 
+const COURSE_TYPES = [
+  { key: "video", label: "Video" },
+  { key: "text", label: "Text" },
+  { key: "infographie", label: "Infographie" },
+];
+
+const inferCourseType = (course = {}) => {
+  if (course.course_type) return course.course_type;
+  const media = String(course.media || "");
+  if (/\.pdf($|\?)/i.test(media) || /^data:application\/pdf/i.test(media)) return "infographie";
+  return "video";
+};
+
+const isPdfMedia = (media = "") => /\.pdf($|\?)/i.test(media) || /^data:application\/pdf/i.test(media);
+
 export default function AdminCourses() {
-  // -- categories state --
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // -- add category modal --
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
 
-  // -- add/edit course modal --
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [editingCourse, setEditingCourse] = useState(null);
   const [courseForm, setCourseForm] = useState({
-    title: "", level: "", duration: "", description: "", media: "", quiz_link: ""
+    title: "",
+    level: "",
+    duration: "",
+    description: "",
+    media: "",
+    course_type: "video",
   });
 
-  // --- load categories on mount ---
-  useEffect(() => { fetchCategories(); }, []);
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  useEffect(() => {
+    const media = courseForm.media.trim();
+    if (!showCourseModal || courseForm.course_type !== "video" || !media) return;
+    if (!/youtu\.be|youtube\.com/i.test(media)) return;
+
+    const timer = setTimeout(() => {
+      fetch(`http://localhost:5000/api/admin/courses/detect-duration?url=${encodeURIComponent(media)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data?.duration) {
+            setCourseForm(prev => {
+              if (prev.media.trim() !== media || prev.course_type !== "video") return prev;
+              return { ...prev, duration: data.duration };
+            });
+          }
+        })
+        .catch(console.error);
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [courseForm.media, courseForm.course_type, showCourseModal]);
 
   const fetchCategories = () => {
     setLoading(true);
@@ -34,10 +74,12 @@ export default function AdminCourses() {
         setCategories(Array.isArray(data) ? data : []);
         setLoading(false);
       })
-      .catch(err => { console.error(err); setLoading(false); });
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
   };
 
-  // --- load courses of a selected category ---
   const loadCategoryData = (category) => {
     setSelectedCategory(category);
     setLoading(true);
@@ -47,31 +89,40 @@ export default function AdminCourses() {
         setCourses(Array.isArray(data) ? data : []);
         setLoading(false);
       })
-      .catch(err => { console.error(err); setCourses([]); setLoading(false); });
+      .catch(err => {
+        console.error(err);
+        setCourses([]);
+        setLoading(false);
+      });
   };
 
-  // --- add category ---
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
     await fetch("http://localhost:5000/api/admin/categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newCategoryName.trim() })
+      body: JSON.stringify({ name: newCategoryName.trim() }),
     });
     setNewCategoryName("");
     setShowAddCategory(false);
     fetchCategories();
   };
 
-  // --- open add course modal ---
   const openAddCourse = () => {
     setEditingCourse(null);
-    setCourseForm({ title: "", level: "", duration: "", description: "", media: "", quiz_link: "" });
+    setCourseForm({
+      title: "",
+      level: "",
+      duration: "",
+      description: "",
+      media: "",
+      course_type: "video",
+    });
     setShowCourseModal(true);
   };
 
-  // --- open edit course modal ---
   const openEditCourse = (course) => {
+    const courseType = inferCourseType(course);
     setEditingCourse(course);
     setCourseForm({
       title: course.title || "",
@@ -79,51 +130,92 @@ export default function AdminCourses() {
       duration: course.duration || "",
       description: course.description || "",
       media: course.media || "",
-      quiz_link: course.quiz_link || ""
+      course_type: courseType,
     });
     setShowCourseModal(true);
   };
 
-  // --- handle add/edit course form submit ---
+  const handlePdfImport = (file) => {
+    if (!file) return;
+    if (file.type !== "application/pdf") {
+      alert("Veuillez sélectionner un fichier PDF.");
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      alert("Le PDF ne doit pas dépasser 15 Mo.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      setCourseForm(prev => ({ ...prev, media: result }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCourseTypeChange = (nextType) => {
+    setCourseForm(prev => ({
+      ...prev,
+      course_type: nextType,
+      media: "",
+      duration: nextType === "video" ? prev.duration : "",
+    }));
+  };
+
   const handleCourseSubmit = async () => {
     if (!courseForm.title.trim()) return;
+    if (!courseForm.course_type) return;
+
+    if (courseForm.course_type === "video" && !courseForm.media.trim()) {
+      alert("Veuillez fournir un lien vidéo.");
+      return;
+    }
+
+    if ((courseForm.course_type === "text" || courseForm.course_type === "infographie") && !courseForm.media.trim()) {
+      alert("Veuillez importer un fichier PDF.");
+      return;
+    }
+
     const payload = {
       title: courseForm.title,
       level: courseForm.level,
       duration: courseForm.duration,
       description: courseForm.description,
       media: courseForm.media,
-      quiz_link: courseForm.quiz_link
+      course_type: courseForm.course_type,
     };
+
     try {
       if (editingCourse) {
         const res = await fetch(`http://localhost:5000/api/admin/courses/${editingCourse.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error("Erreur lors de la mise à jour");
       } else {
         const res = await fetch(`http://localhost:5000/api/admin/categories/${selectedCategory.id}/courses`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error("Erreur lors de l'ajout");
       }
+
       setShowCourseModal(false);
       loadCategoryData(selectedCategory);
-    } catch (err) { alert(err.message); }
+    } catch (err) {
+      alert(err.message);
+    }
   };
 
-  // --- delete course ---
   const deleteCourse = async (id) => {
     if (!window.confirm("Supprimer ce cours ?")) return;
     await fetch(`http://localhost:5000/api/admin/courses/${id}`, { method: "DELETE" });
     loadCategoryData(selectedCategory);
   };
 
-  // ========== LOADING STATE ==========
   if (loading && !selectedCategory) {
     return (
       <div className="flex justify-center py-12">
@@ -164,7 +256,6 @@ export default function AdminCourses() {
       </div>
 
       {!selectedCategory ? (
-        /* Category cards */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {categories.map(cat => (
             <div
@@ -183,7 +274,6 @@ export default function AdminCourses() {
           ))}
         </div>
       ) : (
-        /* Category detail view */
         <>
           <div className="flex items-center justify-between mb-4">
             <button
@@ -200,7 +290,6 @@ export default function AdminCourses() {
             </button>
           </div>
 
-          {/* Courses table */}
           <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden mb-6">
             <div className="overflow-x-auto">
               <table className="w-full text-sm table-classic">
@@ -208,10 +297,10 @@ export default function AdminCourses() {
                   <tr>
                     <th className="px-4 py-3 text-left">Titre</th>
                     <th className="px-4 py-3 text-left hidden md:table-cell">Description</th>
+                    <th className="px-4 py-3 text-left">Type</th>
                     <th className="px-4 py-3 text-left">Niveau</th>
                     <th className="px-4 py-3 text-left">Durée</th>
                     <th className="px-4 py-3 text-center">Média</th>
-                    <th className="px-4 py-3 text-center">Quiz</th>
                     <th className="px-4 py-3 text-center">Actions</th>
                   </tr>
                 </thead>
@@ -220,21 +309,18 @@ export default function AdminCourses() {
                     <tr key={course.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-900">{course.title}</td>
                       <td className="px-4 py-3 text-gray-500 hidden md:table-cell max-w-xs truncate">{course.description || "—"}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
+                          {course.course_type === "video" ? <FaVideo className="text-blue-500" /> : course.course_type === "infographie" ? <FaImage className="text-amber-500" /> : <FaFilePdf className="text-red-500" />}
+                          {course.course_type || "video"}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-gray-600">{course.level || "—"}</td>
                       <td className="px-4 py-3 text-gray-600">{course.duration || "—"}</td>
                       <td className="px-4 py-3 text-center">
                         {course.media ? (
                           <a href={course.media} target="_blank" rel="noreferrer" className="text-purple-600 hover:underline inline-flex items-center gap-1">
-                            <FaVideo className="text-sm" /> Lien
-                          </a>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {course.quiz_link ? (
-                          <a href={course.quiz_link} target="_blank" rel="noreferrer" className="text-purple-600 hover:underline inline-flex items-center gap-1">
-                            <FaExternalLinkAlt className="text-sm" /> Lien
+                            {isPdfMedia(course.media) ? <FaFilePdf className="text-sm" /> : <FaVideo className="text-sm" />} Lien
                           </a>
                         ) : (
                           <span className="text-gray-400">—</span>
@@ -260,14 +346,17 @@ export default function AdminCourses() {
         </>
       )}
 
-      {/* ========== MODALS ========== */}
-
-      {/* Add Category Modal */}
       {showAddCategory && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full">
             <h3 className="text-lg font-bold mb-4">Nouvelle catégorie</h3>
-            <input type="text" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="Nom de la catégorie" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 mb-4" />
+            <input
+              type="text"
+              value={newCategoryName}
+              onChange={e => setNewCategoryName(e.target.value)}
+              placeholder="Nom de la catégorie"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 mb-4"
+            />
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowAddCategory(false)} className="px-4 py-2 text-sm text-gray-600">Annuler</button>
               <button onClick={handleAddCategory} className="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-semibold">Créer</button>
@@ -276,22 +365,108 @@ export default function AdminCourses() {
         </div>
       )}
 
-      {/* Add/Edit Course Modal */}
       {showCourseModal && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold mb-4">{editingCourse ? "Modifier le cours" : "Ajouter un cours à " + selectedCategory?.name}</h3>
+            <h3 className="text-lg font-bold mb-4">
+              {editingCourse ? "Modifier le cours" : "Ajouter un cours à " + selectedCategory?.name}
+            </h3>
             <div className="space-y-3">
-              <input type="text" placeholder="Titre du cours *" value={courseForm.title} onChange={e => setCourseForm({ ...courseForm, title: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
-              <input type="text" placeholder="Niveau (ex: Débutant)" value={courseForm.level} onChange={e => setCourseForm({ ...courseForm, level: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
-              <input type="text" placeholder="Durée (ex: 2h30)" value={courseForm.duration} onChange={e => setCourseForm({ ...courseForm, duration: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
-              <textarea placeholder="Description" value={courseForm.description} onChange={e => setCourseForm({ ...courseForm, description: e.target.value })} rows="2" className="w-full px-4 py-2.5 rounded-xl border border-gray-200 resize-none" />
-              <input type="url" placeholder="Lien média (vidéo/audio)" value={courseForm.media} onChange={e => setCourseForm({ ...courseForm, media: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
-              <input type="url" placeholder="Lien du quiz" value={courseForm.quiz_link} onChange={e => setCourseForm({ ...courseForm, quiz_link: e.target.value })} className="w-full px-4 py-2.5 rounded-xl border border-gray-200" />
+              <div className="grid grid-cols-3 gap-2">
+                {COURSE_TYPES.map(item => {
+                  const active = courseForm.course_type === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => handleCourseTypeChange(item.key)}
+                      className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                        active ? "border-purple-600 bg-purple-50 text-purple-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <input
+                type="text"
+                placeholder="Titre du cours *"
+                value={courseForm.title}
+                onChange={e => setCourseForm({ ...courseForm, title: e.target.value })}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
+              />
+              <input
+                type="text"
+                placeholder="Niveau (ex: Débutant)"
+                value={courseForm.level}
+                onChange={e => setCourseForm({ ...courseForm, level: e.target.value })}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
+              />
+
+              {courseForm.course_type === "video" ? (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Durée (ex: 2h30)"
+                    value={courseForm.duration}
+                    onChange={e => setCourseForm({ ...courseForm, duration: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
+                  />
+                  <input
+                    type="url"
+                    placeholder="Lien vidéo"
+                    value={courseForm.media}
+                    onChange={e => setCourseForm({ ...courseForm, media: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
+                  />
+                  <p className="text-xs text-gray-500 -mt-1">La durée est détectée automatiquement pour les liens YouTube.</p>
+                </>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Durée optionnelle"
+                    value={courseForm.duration}
+                    onChange={e => setCourseForm({ ...courseForm, duration: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200"
+                  />
+                  <label className="block w-full rounded-xl border border-dashed border-gray-300 px-4 py-5 text-center cursor-pointer hover:bg-gray-50 transition">
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      className="hidden"
+                      onChange={e => handlePdfImport(e.target.files?.[0])}
+                    />
+                    <div className="flex flex-col items-center gap-2">
+                      <FaFilePdf className="text-red-500 text-xl" />
+                      <span className="text-sm font-semibold text-gray-700">Importer un PDF</span>
+                      <span className="text-xs text-gray-500">Cours texte ou infographie</span>
+                    </div>
+                  </label>
+                  {courseForm.media && (
+                    <p className="text-xs text-gray-500 break-all">
+                      PDF prêt: {courseForm.media.startsWith("data:application/pdf") ? "fichier importé" : courseForm.media}
+                    </p>
+                  )}
+                </>
+              )}
+
+              <textarea
+                placeholder="Description"
+                value={courseForm.description}
+                onChange={e => setCourseForm({ ...courseForm, description: e.target.value })}
+                rows="2"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 resize-none"
+              />
             </div>
+
             <div className="flex justify-end gap-2 mt-6">
               <button onClick={() => setShowCourseModal(false)} className="px-4 py-2 text-sm text-gray-600">Annuler</button>
-              <button onClick={handleCourseSubmit} className="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-semibold flex items-center gap-1"><FaSave className="text-xs" /> {editingCourse ? "Enregistrer" : "Ajouter"}</button>
+              <button onClick={handleCourseSubmit} className="px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-semibold flex items-center gap-1">
+                <FaSave className="text-xs" /> {editingCourse ? "Enregistrer" : "Ajouter"}
+              </button>
             </div>
           </div>
         </div>

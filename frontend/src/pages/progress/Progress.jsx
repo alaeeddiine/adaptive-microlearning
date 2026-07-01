@@ -5,20 +5,31 @@ import {
 import Header from "../../components/Header";
 import useAuth from "../../hooks/useAuth";
 
-const BarChart = ({ data }) => {
-  const max = Math.max(...data.map(d => d.count), 1);
+const ActivityChart = ({ data }) => {
+  const values = Array.isArray(data) ? data : [];
+  const max = Math.max(...values.map(d => d.count || 0), 1);
+
   return (
-    <div className="flex items-end justify-between gap-1 h-24">
-      {data.map(item => (
-        <div key={item.day} className="flex flex-col items-center gap-1 flex-1">
-          <span className="text-xs font-medium text-gray-600">{item.count}</span>
-          <div
-            className="w-full bg-purple-500 rounded-t-md transition-all"
-            style={{ height: `${(item.count / max) * 100}%` }}
-          />
-          <span className="text-xs text-gray-400">{item.day}</span>
-        </div>
-      ))}
+    <div className="h-44 sm:h-52 flex items-end justify-between gap-2 sm:gap-3">
+      {values.map(item => {
+        const barHeight = Math.max(10, ((item.count || 0) / max) * 100);
+        return (
+          <div key={item.day} className="flex flex-col items-center justify-end flex-1 h-full min-w-0">
+            <span className="text-[10px] sm:text-xs font-semibold text-gray-700 mb-1 leading-none">
+              {item.count || 0}
+            </span>
+            <div className="w-full flex-1 flex items-end">
+              <div
+                className="w-full bg-gradient-to-t from-purple-600 to-indigo-500 rounded-t-lg shadow-sm"
+                style={{ height: `${barHeight}%` }}
+              />
+            </div>
+            <span className="text-[10px] sm:text-xs text-gray-400 mt-2 leading-none">
+              {item.day}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -140,8 +151,8 @@ export default function Progress() {
           </h3>
           <span className="text-xs text-gray-400">7 derniers jours</span>
         </div>
-        {weeklyActivity.length > 0 && weeklyActivity.some(d => d.count > 0) ? (
-          <BarChart data={weeklyActivity} />
+        {weeklyActivity.length > 0 ? (
+          <ActivityChart data={weeklyActivity} />
         ) : (
           <p className="text-gray-400 text-sm py-4 text-center">Aucune activité récente.</p>
         )}

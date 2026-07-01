@@ -21,15 +21,15 @@ import Header from "../../components/Header";
 import useAuth from "../../hooks/useAuth";
 import {
   updatePassword,
-  deleteUser,
   reauthenticateWithCredential,
   EmailAuthProvider,
+  deleteUser,
 } from "firebase/auth";
 import { doc, updateDoc, deleteDoc } from "firebase/firestore";
-import { auth, db } from "../../firebase/firebase";
+import { db } from "../../firebase/firebase";
 
 export default function Profile() {
-  const { currentUser, userData, updateUserData } = useAuth();
+  const { currentUser, userData, updateUserData, logout } = useAuth();
 
   // ---- Informations générales ----
   const [name, setName] = useState(userData?.name || "");
@@ -122,7 +122,7 @@ export default function Profile() {
       setPasswordError("Les mots de passe ne correspondent pas.");
       return;
     }
-    if (newPassword.length < 6) {
+    if ((newPassword?.length || 0) < 6) {
       setPasswordError("Le mot de passe doit contenir au moins 6 caractères.");
       return;
     }
@@ -147,23 +147,22 @@ export default function Profile() {
 
   const handleDeleteAccount = async () => {
     setDeleteError("");
+    if (!currentUser?.uid || !currentUser?.email) {
+      setDeleteError("Compte introuvable.");
+      return;
+    }
     if (deleteEmail !== currentUser.email) {
       setDeleteError("L'email ne correspond pas à votre compte.");
       return;
     }
     try {
-      // 1. Delete Firestore document FIRST
-      await deleteDoc(doc(db, "users", currentUser.uid));
-
-      // 2. Delete from SQLite via backend (still authenticated here)
-      await fetch(`http://localhost:5000/api/admin/users/${currentUser.uid}`, {
+      await fetch(`http://localhost:5000/api/users/${currentUser.uid}`, {
         method: "DELETE",
       });
 
-      // 3. Finally, delete Firebase Auth user (this will sign out)
+      await deleteDoc(doc(db, "users", currentUser.uid));
       await deleteUser(currentUser);
-
-      // onAuthStateChanged will redirect to /login automatically
+      await logout();
     } catch (err) {
       if (err.code === "auth/requires-recent-login") {
         setDeleteError(

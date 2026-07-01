@@ -8,8 +8,8 @@ const questions = [
   {
     key: "age",
     title: "Quel est votre âge ?",
-    subtitle: "Cela nous aide à adapter les contenus à votre tranche d'âge.",
-    options: ["<16", "16-20", "21-30", "31-45", "45+"],
+    subtitle: "Saisissez votre âge exact.",
+    exact: true,
   },
   {
     key: "education",
@@ -139,32 +139,48 @@ export default function Questionnaire() {
           </p>
 
           {/* Options */}
-          <div className="space-y-2.5">
-            {question.options.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => updateAnswer(question.key, opt)}
-                className={`option-card w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left ${
-                  answers[question.key] === opt
-                    ? "selected border-purple-500 bg-purple-50"
-                    : "border-gray-200 hover:bg-gray-50"
-                }`}
-              >
-                <span
-                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+          {question.exact ? (
+            <div className="space-y-2.5">
+              <input
+                type="number"
+                min="13"
+                max="120"
+                inputMode="numeric"
+                placeholder="Ex: 24"
+                value={answers[question.key] || ""}
+                onChange={(e) => updateAnswer(question.key, e.target.value)}
+                className="w-full p-3 rounded-xl border-2 border-gray-200 outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-50 text-sm font-medium text-gray-900"
+              />
+              <p className="text-xs text-gray-500">Âge exact, en années.</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {question.options.map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => updateAnswer(question.key, opt)}
+                  className={`option-card w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left ${
                     answers[question.key] === opt
-                      ? "border-purple-600 bg-purple-600"
-                      : "border-gray-300"
+                      ? "selected border-purple-500 bg-purple-50"
+                      : "border-gray-200 hover:bg-gray-50"
                   }`}
                 >
-                  {answers[question.key] === opt && (
-                    <span className="w-2 h-2 bg-white rounded-full" />
-                  )}
-                </span>
-                <span className="text-sm font-medium text-gray-900">{opt}</span>
-              </button>
-            ))}
-          </div>
+                  <span
+                    className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                      answers[question.key] === opt
+                        ? "border-purple-600 bg-purple-600"
+                        : "border-gray-300"
+                    }`}
+                  >
+                    {answers[question.key] === opt && (
+                      <span className="w-2 h-2 bg-white rounded-full" />
+                    )}
+                  </span>
+                  <span className="text-sm font-medium text-gray-900">{opt}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Navigation */}
           <div className="flex items-center justify-between mt-6">

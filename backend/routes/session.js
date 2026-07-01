@@ -147,17 +147,22 @@ router.post("/", async (req, res) => {
 
 // POST /api/session/auto – automatic context collection (device, network, time)
 router.post("/auto", (req, res) => {
-    const { firebase_uid, device_type, connection_level, time_of_day } = req.body;
+    const { firebase_uid, device_type, connection_level, time_of_day, battery_level, battery_percent, time_available } = req.body;
 
     if (!firebase_uid) return res.status(400).json({ message: "firebase_uid requis" });
 
-    const time_available = "Non spécifié";
-    const battery_level = "Non spécifié";
-
     db.run(
-        `INSERT INTO session_context (firebase_uid, time_available, connection_level, device_type, battery_level, time_of_day)
-         VALUES (?,?,?,?,?,?)`,
-        [firebase_uid, time_available, connection_level, device_type, battery_level, time_of_day],
+        `INSERT INTO session_context (firebase_uid, time_available, connection_level, device_type, battery_level, battery_percent, time_of_day)
+         VALUES (?,?,?,?,?,?,?)`,
+        [
+            firebase_uid,
+            time_available || "Non spécifié",
+            connection_level || "Non spécifié",
+            device_type || "Non spécifié",
+            battery_level || "Non spécifié",
+            battery_percent != null ? battery_percent : null,
+            time_of_day || "Non spécifié",
+        ],
         function(err) {
             if (err) {
                 console.error("Erreur sauvegarde auto session :", err);

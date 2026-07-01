@@ -1,6 +1,44 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../database/database");
+const { getFirebaseAdmin } = require("../lib/firebaseAdmin");
+
+function runAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.run(sql, params, function(err) {
+            if (err) reject(err);
+            else resolve(this);
+        });
+    });
+}
+
+async function deleteFirebaseIdentity(uid) {
+    const admin = getFirebaseAdmin();
+    if (!admin) {
+        throw new Error("Firebase Admin non configuré");
+    }
+
+    const auth = admin.auth();
+    const firestore = admin.firestore();
+
+    try {
+        await auth.deleteUser(uid);
+    } catch (err) {
+        if (err?.code !== "auth/user-not-found") {
+            throw err;
+        }
+    }
+
+    let firestoreDeleted = true;
+    try {
+        await firestore.collection("users").doc(uid).delete();
+    } catch (err) {
+        firestoreDeleted = false;
+        console.error("Erreur suppression Firestore :", err.message);
+    }
+
+    return { firestoreDeleted };
+}
 
 // ---------- Helpers ----------
 function mergeAndSum(segments) {
@@ -23,6 +61,98 @@ function formatTime(seconds) {
     const m = Math.floor((seconds % 3600) / 60);
     if (h > 0) return `${h}h ${m}m`;
     return `${m}m`;
+}
+
+function formatSeconds(seconds) {
+    const total = Math.max(0, Math.round(Number(seconds) || 0));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+}
+
+function durationFromTimestamp(createdAt) {
+    if (!createdAt) return 0;
+    const ts = new Date(`${createdAt}Z`).getTime();
+    if (!Number.isFinite(ts)) return 0;
+    return Math.max(0, Math.floor((Date.now() - ts) / 1000));
+}
+
+function inferBatteryPercentFromLevel(level) {
+    const normalized = String(level || "").trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized.includes("%")) {
+        const parsed = parseFloat(normalized);
+        return Number.isFinite(parsed) ? Math.max(0, Math.min(100, Math.round(parsed))) : null;
+    }
+    if (normalized === "faible") return 15;
+    if (normalized === "moyenne") return 50;
+    if (normalized === "élevé" || normalized === "eleve") return 85;
+    return null;
+}
+
+function extractYouTubeVideoId(url) {
+    if (!url) return null;
+    const value = String(url).trim();
+    const patterns = [
+        /(?:youtu\.be\/)([A-Za-z0-9_-]{11})/i,
+        /(?:youtube\.com\/watch\?v=)([A-Za-z0-9_-]{11})/i,
+        /(?:youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/i,
+        /(?:youtube\.com\/shorts\/)([A-Za-z0-9_-]{11})/i,
+        /[?&]v=([A-Za-z0-9_-]{11})/i,
+    ];
+    for (const pattern of patterns) {
+        const match = value.match(pattern);
+        if (match) return match[1];
+    }
+    return null;
+}
+
+function parseIsoDuration(isoDuration) {
+    if (!isoDuration) return 0;
+    const match = String(isoDuration).match(/^P(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)$/i);
+    if (!match) return 0;
+    const hours = parseInt(match[1] || "0", 10);
+    const minutes = parseInt(match[2] || "0", 10);
+    const seconds = Math.round(parseFloat(match[3] || "0"));
+    return hours * 3600 + minutes * 60 + seconds;
+}
+
+function formatDuration(seconds) {
+    const total = Math.max(0, Math.round(Number(seconds) || 0));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+async function detectVideoDuration(mediaUrl) {
+    const videoId = extractYouTubeVideoId(mediaUrl);
+    if (!videoId) return null;
+    if (typeof fetch !== "function") return null;
+
+    const response = await fetch(`https://www.youtube.com/watch?v=${videoId}&hl=en`);
+    if (!response.ok) return null;
+
+    const html = await response.text();
+    const lengthMatch = html.match(/"lengthSeconds":"(\d+)"/) || html.match(/"lengthSeconds":(\d+)/);
+    if (lengthMatch) return formatDuration(parseInt(lengthMatch[1], 10));
+
+    const approxMatch = html.match(/"approxDurationMs":"(\d+)"/);
+    if (approxMatch) return formatDuration(Math.round(parseInt(approxMatch[1], 10) / 1000));
+
+    const isoMatch = html.match(/itemprop="duration" content="([^"]+)"/i);
+    if (isoMatch) return formatDuration(parseIsoDuration(isoMatch[1]));
+
+    return null;
+}
+
+async function resolveCourseDuration(mediaUrl, fallbackDuration) {
+    const media = String(mediaUrl || "").trim();
+    if (!media) return fallbackDuration || "";
+    const detected = await detectVideoDuration(media).catch(() => null);
+    return detected || fallbackDuration || "";
 }
 
 // ---------- DASHBOARD ----------
@@ -252,15 +382,63 @@ router.get("/users/:uid", (req, res) => {
                     (err, activities) => {
                         if (err) activities = [];
 
-                        // 5. Session contexts (last 5)
-                        db.get(
-                            `SELECT * FROM session_context
-                            WHERE firebase_uid = ?
-                            ORDER BY created_at DESC LIMIT 1`,
+                        // 5. Session contexts + current detected context + daily average
+                        db.all(
+                            `SELECT *
+                             FROM session_context
+                             WHERE firebase_uid = ?
+                             ORDER BY created_at DESC, id DESC`,
                             [uid],
-                            (err, sessionRow) => {
+                            (err, sessionRows) => {
                                 if (err) console.error("Erreur session:", err);
-                                const sessions = sessionRow ? [sessionRow] : [];
+                                const sessions = Array.isArray(sessionRows) ? sessionRows : [];
+                                const currentContext = sessions.length > 0 ? sessions[0] : null;
+                                const activeSessions = sessions.filter((s) => (Number(s.duration) || 0) > 0);
+                                const totalSessionSeconds = activeSessions.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
+                                const activeDays = new Set(
+                                    activeSessions.map((s) => {
+                                        try {
+                                            return new Date(s.created_at + "Z").toISOString().split("T")[0];
+                                        } catch {
+                                            return null;
+                                        }
+                                    }).filter(Boolean)
+                                );
+                                const averageDailySeconds = activeDays.size > 0
+                                    ? Math.round(totalSessionSeconds / activeDays.size)
+                                    : 0;
+                                const batteryStats = sessions.reduce((acc, session) => {
+                                    const key = session.battery_level || "Non disponible";
+                                    acc[key] = (acc[key] || 0) + 1;
+                                    return acc;
+                                }, {});
+                                const batteryPercentValues = sessions
+                                    .map((s) => {
+                                        if (s.battery_percent != null && Number.isFinite(Number(s.battery_percent))) {
+                                            return Math.max(0, Math.min(100, Math.round(Number(s.battery_percent))));
+                                        }
+                                        return inferBatteryPercentFromLevel(s.battery_level);
+                                    })
+                                    .filter((v) => v != null);
+                                const averageBatteryPercent = batteryPercentValues.length > 0
+                                    ? Math.round(batteryPercentValues.reduce((sum, v) => sum + v, 0) / batteryPercentValues.length)
+                                    : null;
+                                const currentBatteryPercent = currentContext
+                                    ? (currentContext.battery_percent != null && Number.isFinite(Number(currentContext.battery_percent))
+                                        ? Math.max(0, Math.min(100, Math.round(Number(currentContext.battery_percent))))
+                                        : inferBatteryPercentFromLevel(currentContext.battery_level))
+                                    : null;
+                                const currentBatteryLevel = currentContext?.battery_level || "Non disponible";
+                                const currentSessionDuration = (() => {
+                                    if (!currentContext) return "0m";
+                                    const stored = Number(currentContext.duration) || 0;
+                                    if (stored > 0) return formatSeconds(stored);
+                                    try {
+                                        return formatSeconds(durationFromTimestamp(currentContext.created_at));
+                                    } catch {
+                                        return "0m";
+                                    }
+                                })();
 
                                 // 6. ARCS responses (last 5)
                                 db.all(
@@ -307,6 +485,20 @@ router.get("/users/:uid", (req, res) => {
                                                             courses: courses || [],
                                                             activities: activities || [],
                                                             sessions: sessions || [],
+                                                            sessionSummary: {
+                                                                currentContext,
+                                                                currentBatteryLevel,
+                                                                currentBatteryPercent,
+                                                                averageBatteryPercent,
+                                                                batteryStats,
+                                                                activeSessionsCount: activeSessions.length,
+                                                                activeDaysCount: activeDays.size,
+                                                                averageDailySeconds,
+                                                                averageDailyFormatted: formatSeconds(averageDailySeconds),
+                                                                totalSessionSeconds,
+                                                                totalSessionFormatted: formatSeconds(totalSessionSeconds),
+                                                                currentSessionDuration,
+                                                            },
                                                             arcs: arcs || [],
                                                             badges: badges || [],
                                                             quizzes: quizzes || [],   // ← NEW
@@ -326,19 +518,31 @@ router.get("/users/:uid", (req, res) => {
     });
 });
 
-router.delete("/users/:uid", (req, res) => {
+router.delete("/users/:uid", async (req, res) => {
     const { uid } = req.params;
-    db.run("DELETE FROM courses WHERE firebase_uid = ?", [uid], (err) => {
-        if (err) return res.status(500).json({ message: err.message });
-        db.run("DELETE FROM user_progress WHERE firebase_uid = ?", [uid], (err) => {
-            if (err) return res.status(500).json({ message: err.message });
-            db.run("DELETE FROM users WHERE firebase_uid = ?", [uid], function(err) {
-                if (err) return res.status(500).json({ message: err.message });
-                if (this.changes === 0) return res.status(404).json({ message: "Utilisateur non trouvé" });
-                res.json({ message: "Utilisateur supprimé" });
-            });
-        });
-    });
+
+    try {
+        await deleteFirebaseIdentity(uid);
+    } catch (err) {
+        if (err?.code !== "auth/user-not-found") {
+            return res.status(500).json({ message: err.message || "Erreur Firebase" });
+        }
+    }
+
+    try {
+        await runAsync("DELETE FROM courses WHERE firebase_uid = ?", [uid]);
+        await runAsync("DELETE FROM user_progress WHERE firebase_uid = ?", [uid]);
+        await runAsync("DELETE FROM notifications WHERE firebase_uid = ?", [uid]);
+        await runAsync("DELETE FROM session_context WHERE firebase_uid = ?", [uid]);
+        await runAsync("DELETE FROM user_activity WHERE firebase_uid = ?", [uid]);
+        await runAsync("DELETE FROM arcs_responses WHERE firebase_uid = ?", [uid]);
+        await runAsync("DELETE FROM user_answers WHERE firebase_uid = ?", [uid]);
+        await runAsync("DELETE FROM user_badges WHERE firebase_uid = ?", [uid]);
+        await runAsync("DELETE FROM users WHERE firebase_uid = ?", [uid]);
+        res.json({ message: "Utilisateur supprimé définitivement" });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
 });
 
 // ---------- CATEGORIES ----------
@@ -380,33 +584,52 @@ router.get("/categories/:id/courses", (req, res) => {
 
 router.post("/categories/:id/courses", (req, res) => {
     const { id } = req.params;
-    const { title, level, duration, description, media, quiz_link } = req.body;
+    const { title, level, duration, description, media, quiz_link, course_type } = req.body;
     if (!title) return res.status(400).json({ message: "Titre requis" });
-    db.run(
-        `INSERT INTO courses (title, level, duration, description, media, quiz_link, category_id)
-         VALUES (?,?,?,?,?,?,?)`,
-        [title, level, duration, description || "", media || "", quiz_link || "", id],
-        function(err) {
-            if (err) return res.status(500).json({ message: err.message });
-            res.json({ id: this.lastID, title, level, duration, description, media, quiz_link });
-        }
-    );
+    resolveCourseDuration(media, duration)
+        .then((resolvedDuration) => {
+            db.run(
+                `INSERT INTO courses (title, level, duration, description, media, quiz_link, course_type, category_id)
+                 VALUES (?,?,?,?,?,?,?,?)`,
+                [title, level, resolvedDuration, description || "", media || "", quiz_link || "", course_type || "video", id],
+                function(err) {
+                    if (err) return res.status(500).json({ message: err.message });
+                    res.json({ id: this.lastID, title, level, duration: resolvedDuration, description, media, quiz_link, course_type: course_type || "video" });
+                }
+            );
+        })
+        .catch((err) => res.status(500).json({ message: err.message }));
+});
+
+router.get("/courses/detect-duration", async (req, res) => {
+    const media = req.query.url || "";
+    if (!String(media).trim()) return res.json({ duration: "" });
+    try {
+        const duration = await resolveCourseDuration(media, "");
+        res.json({ duration });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
 });
 
 // ---------- SINGLE COURSE (UPDATE / DELETE) ----------
 router.put("/courses/:id", (req, res) => {
     const { id } = req.params;
-    const { title, level, duration, description, media, quiz_link } = req.body;
+    const { title, level, duration, description, media, quiz_link, course_type } = req.body;
     if (!title) return res.status(400).json({ message: "Titre requis" });
-    db.run(
-        `UPDATE courses SET title=?, level=?, duration=?, description=?, media=?, quiz_link=? WHERE id=?`,
-        [title, level, duration, description || "", media || "", quiz_link || "", id],
-        function(err) {
-            if (err) return res.status(500).json({ message: err.message });
-            if (this.changes === 0) return res.status(404).json({ message: "Cours non trouvé" });
-            res.json({ message: "Cours mis à jour" });
-        }
-    );
+    resolveCourseDuration(media, duration)
+        .then((resolvedDuration) => {
+            db.run(
+                `UPDATE courses SET title=?, level=?, duration=?, description=?, media=?, quiz_link=?, course_type=? WHERE id=?`,
+                [title, level, resolvedDuration, description || "", media || "", quiz_link || "", course_type || "video", id],
+                function(err) {
+                    if (err) return res.status(500).json({ message: err.message });
+                    if (this.changes === 0) return res.status(404).json({ message: "Cours non trouvé" });
+                    res.json({ message: "Cours mis à jour", duration: resolvedDuration });
+                }
+            );
+        })
+        .catch((err) => res.status(500).json({ message: err.message }));
 });
 
 router.delete("/courses/:id", (req, res) => {

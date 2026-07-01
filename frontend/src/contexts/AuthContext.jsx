@@ -8,7 +8,7 @@ import {
   setPersistence,
   browserSessionPersistence,
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase/firebase";
 
 const AuthContext = createContext();
@@ -33,18 +33,41 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
-        const ref = doc(db, "users", user.uid);
-        const snap = await getDoc(ref);
-        if (snap.exists()) setUserData(snap.data());
       } else {
         setCurrentUser(null);
         setUserData(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return unsubscribe;
   }, [persistenceReady]);
+
+  useEffect(() => {
+    if (!persistenceReady || !currentUser) return;
+
+    const ref = doc(db, "users", currentUser.uid);
+    const unsubscribe = onSnapshot(
+      ref,
+      async (snap) => {
+        if (!snap.exists()) {
+          await signOut(auth).catch(() => {});
+          setCurrentUser(null);
+          setUserData(null);
+          setLoading(false);
+          return;
+        }
+
+        setUserData(snap.data());
+        setLoading(false);
+      },
+      () => {
+        setLoading(false);
+      }
+    );
+
+    return unsubscribe;
+  }, [persistenceReady, currentUser]);
 
   // 🔥 Nouvelle fonction pour mettre à jour userData localement
   const updateUserData = (newData) => {

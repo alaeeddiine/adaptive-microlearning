@@ -47,7 +47,7 @@ router.get("/user/:uid", (req, res) => {
     const { uid } = req.params;
     const sql = `
         SELECT c.id, c.title, c.category_id, c.level, c.duration,
-               c.description, c.media, c.quiz_link,
+               c.description, c.media, c.quiz_link, c.course_type,
                up.progress, up.last_watched_at
         FROM user_progress up
         JOIN courses c ON c.id = up.course_id

@@ -44,4 +44,24 @@ router.put("/questionnaire", (req, res) => {
     });
 });
 
+router.delete("/:uid", (req, res) => {
+    const { uid } = req.params;
+
+    db.serialize(() => {
+        db.run("DELETE FROM courses WHERE firebase_uid = ?", [uid]);
+        db.run("DELETE FROM user_progress WHERE firebase_uid = ?", [uid]);
+        db.run("DELETE FROM notifications WHERE firebase_uid = ?", [uid]);
+        db.run("DELETE FROM session_context WHERE firebase_uid = ?", [uid]);
+        db.run("DELETE FROM user_activity WHERE firebase_uid = ?", [uid]);
+        db.run("DELETE FROM arcs_responses WHERE firebase_uid = ?", [uid]);
+        db.run("DELETE FROM user_answers WHERE firebase_uid = ?", [uid]);
+        db.run("DELETE FROM user_badges WHERE firebase_uid = ?", [uid]);
+        db.run("DELETE FROM users WHERE firebase_uid = ?", [uid], function(err) {
+            if (err) return res.status(500).json({ message: err.message });
+            if (this.changes === 0) return res.status(404).json({ message: "Utilisateur non trouvé" });
+            res.json({ message: "Données utilisateur supprimées" });
+        });
+    });
+});
+
 module.exports = router;

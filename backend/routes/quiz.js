@@ -7,16 +7,18 @@ router.get("/", (req, res) => {
     const { category_id } = req.query;
     let sql = `
         SELECT q.id, q.title, q.description, q.category_id,
-               cat.name AS category_name
+               cat.name AS category_name,
+               COUNT(DISTINCT qs.id) AS question_count
         FROM quizzes q
         LEFT JOIN categories cat ON cat.id = q.category_id
+        LEFT JOIN questions qs ON qs.quiz_id = q.id
     `;
     const params = [];
     if (category_id) {
         sql += " WHERE q.category_id = ?";
         params.push(category_id);
     }
-    sql += " ORDER BY q.created_at DESC";
+    sql += " GROUP BY q.id ORDER BY q.created_at DESC";
     db.all(sql, params, (err, rows) => {
         if (err) return res.status(500).json({ message: err.message });
         res.json(rows || []);
@@ -77,20 +79,44 @@ router.post("/:quizId/submit", (req, res) => {
                 "INSERT INTO user_answers (firebase_uid, quiz_id, question_id, selected_option, is_correct) VALUES (?,?,?,?,?)"
             );
             let correctCount = 0;
+            const answerMap = new Map(answers.map((ans) => [Number(ans.question_id), ans.selected_option]));
+            const details = questions.map((q) => {
+                const selectedOption = answerMap.get(q.id) || null;
+                const isCorrect = selectedOption === q.correct_option;
+                if (isCorrect) correctCount++;
+                return {
+                    question_id: q.id,
+                    question_text: q.question_text,
+                    selected_option: selectedOption,
+                    correct_option: q.correct_option,
+                    is_correct: isCorrect,
+                };
+            });
+
             answers.forEach(ans => {
                 const isCorrect = ans.selected_option === correctMap[ans.question_id] ? 1 : 0;
-                if (isCorrect) correctCount++;
                 stmt.run([firebase_uid, quizId, ans.question_id, ans.selected_option, isCorrect]);
             });
             stmt.finalize();
 
             const totalQuestions = questions.length;
             const score = Math.round((correctCount / totalQuestions) * 100);
+            const success = score >= 80;
+
+            if (success) {
+                const message = `Félicitations ! Vous avez réussi le quiz avec un score de ${score}%.`;
+                db.run(
+                    "INSERT INTO notifications (firebase_uid, message, type) VALUES (?, ?, ?)",
+                    [firebase_uid, message, "quiz_success"]
+                );
+            }
 
             res.json({
                 totalQuestions,
                 correctCount,
                 score,
+                success,
+                details,
                 message: `Vous avez obtenu ${score}% (${correctCount}/${totalQuestions})`,
             });
         });

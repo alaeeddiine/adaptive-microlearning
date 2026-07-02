@@ -12,6 +12,28 @@ import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase/firebase";
 
 const AuthContext = createContext();
+const USER_FALLBACK_KEY = "learnsmart_user_fallback";
+
+function saveFallbackUserData(data) {
+  try {
+    sessionStorage.setItem(USER_FALLBACK_KEY, JSON.stringify(data));
+  } catch {}
+}
+
+function loadFallbackUserData() {
+  try {
+    const raw = sessionStorage.getItem(USER_FALLBACK_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearFallbackUserData() {
+  try {
+    sessionStorage.removeItem(USER_FALLBACK_KEY);
+  } catch {}
+}
 
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -19,14 +41,12 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [persistenceReady, setPersistenceReady] = useState(false);
 
-  // 1. Persistance
   useEffect(() => {
     setPersistence(auth, browserSessionPersistence).then(() => {
       setPersistenceReady(true);
     });
   }, []);
 
-  // 2. Écouteur d'état auth
   useEffect(() => {
     if (!persistenceReady) return;
 
@@ -36,6 +56,7 @@ export function AuthProvider({ children }) {
       } else {
         setCurrentUser(null);
         setUserData(null);
+        clearFallbackUserData();
         setLoading(false);
       }
     });
@@ -51,9 +72,16 @@ export function AuthProvider({ children }) {
       ref,
       async (snap) => {
         if (!snap.exists()) {
-          await signOut(auth).catch(() => {});
-          setCurrentUser(null);
-          setUserData(null);
+          const fallback = loadFallbackUserData();
+          setUserData(
+            fallback || {
+              uid: currentUser.uid,
+              name: currentUser.displayName || "",
+              email: currentUser.email || "",
+              questionnaireComplete: false,
+              ab_group: "A",
+            }
+          );
           setLoading(false);
           return;
         }
@@ -62,6 +90,8 @@ export function AuthProvider({ children }) {
         setLoading(false);
       },
       () => {
+        const fallback = loadFallbackUserData();
+        if (fallback) setUserData(fallback);
         setLoading(false);
       }
     );
@@ -69,70 +99,78 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, [persistenceReady, currentUser]);
 
-  // 🔥 Nouvelle fonction pour mettre à jour userData localement
   const updateUserData = (newData) => {
     setUserData((prev) => ({ ...prev, ...newData }));
+    saveFallbackUserData({ ...(userData || {}), ...newData });
   };
 
   const register = async (name, email, password) => {
-    // 1. Créer le compte Firebase Auth
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(cred.user, { displayName: name });
 
-    // 2. Assigner un groupe A/B avant toute utilisation
     const abGroup = Math.random() < 0.5 ? "A" : "B";
+    const fallbackUser = {
+      uid: cred.user.uid,
+      name,
+      email,
+      questionnaireComplete: false,
+      ab_group: abGroup,
+    };
 
-    // 3. Enregistrer dans Firestore (avec ab_group)
-    await setDoc(doc(db, "users", cred.user.uid), {
+    saveFallbackUserData(fallbackUser);
+    setUserData(fallbackUser);
+
+    try {
+      await setDoc(doc(db, "users", cred.user.uid), {
         uid: cred.user.uid,
         name,
         email,
         questionnaireComplete: false,
         createdAt: new Date(),
         ab_group: abGroup,
-    });
-
-    // 4. Envoyer au backend SQLite (avec ab_group)
-    try {
-        const response = await fetch("http://localhost:5000/api/users", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                firebase_uid: cred.user.uid,
-                name,
-                email,
-                ab_group: abGroup,
-            }),
-        });
-        if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.message || "Erreur backend");
-        }
+      });
     } catch (error) {
-        console.error("Erreur SQLite :", error);
+      console.warn("Firestore registration skipped:", error?.message || error);
     }
 
-    // 5. Notification de bienvenue
     try {
-        await fetch("http://localhost:5000/api/notifications", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                firebase_uid: cred.user.uid,
-                message: "🎉 Bienvenue sur LearnSmart ! Nous sommes ravis de vous compter parmi nous.",
-                type: "welcome",
-            }),
-        });
+      const response = await fetch("http://localhost:5000/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firebase_uid: cred.user.uid,
+          name,
+          email,
+          ab_group: abGroup,
+        }),
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || "Erreur backend");
+      }
     } catch (error) {
-        console.error("Erreur notification de bienvenue :", error);
+      console.error("Erreur SQLite :", error);
     }
 
-    // 6. Mise à jour locale du contexte
+    try {
+      await fetch("http://localhost:5000/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firebase_uid: cred.user.uid,
+          message: "🎉 Bienvenue sur LearnSmart ! Nous sommes ravis de vous compter parmi nous.",
+          type: "welcome",
+        }),
+      });
+    } catch (error) {
+      console.error("Erreur notification de bienvenue :", error);
+    }
+
     updateUserData({
-        name,
-        email,
-        questionnaireComplete: false,
-        ab_group: abGroup,
+      name,
+      email,
+      questionnaireComplete: false,
+      ab_group: abGroup,
     });
 
     return cred.user;
@@ -141,7 +179,10 @@ export function AuthProvider({ children }) {
   const login = (email, password) =>
     signInWithEmailAndPassword(auth, email, password);
 
-  const logout = () => signOut(auth);
+  const logout = async () => {
+    clearFallbackUserData();
+    return signOut(auth);
+  };
 
   return (
     <AuthContext.Provider
@@ -151,7 +192,7 @@ export function AuthProvider({ children }) {
         register,
         login,
         logout,
-        updateUserData,   // ← exposé
+        updateUserData,
       }}
     >
       {!loading && children}

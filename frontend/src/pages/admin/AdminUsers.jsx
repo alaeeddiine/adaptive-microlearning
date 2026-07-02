@@ -129,11 +129,11 @@ export default function AdminUsers() {
                           <div className="w-20 bg-gray-100 rounded-full h-2">
                               <div
                                   className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full"
-                                  style={{ width: `${Math.min(100, user.overall_progress ?? 0)}%` }}
+                                  style={{ width: `${Math.min(100, user.avgProgress ?? user.overall_progress ?? 0)}%` }}
                               />
                           </div>
                           <span className="text-xs text-gray-600 font-medium">
-                              {Math.min(100, user.overall_progress ?? 0)}%
+                              {Math.min(100, user.avgProgress ?? user.overall_progress ?? 0)}%
                           </span>
                       </div>
                   </td>

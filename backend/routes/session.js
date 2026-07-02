@@ -3,6 +3,13 @@ const router = express.Router();
 const db = require("../database/database");
 const fetch = require("node-fetch");
 
+const normalizeType = (value) =>
+    String(value || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
 // Moteur de règles pour le groupe B (contrôle)
 function applyRuleEngine(user, context) {
     const { time_available, connection_level, device_type, battery_level, time_of_day } = context;
@@ -78,28 +85,34 @@ router.post("/", async (req, res) => {
         // ---- Groupe B : moteur de règles ----
         if (abGroup === "B") {
             const ruleResult = applyRuleEngine(user, context);
-            db.get(
+            const contentType = normalizeType(ruleResult.contentType);
+
+            if (contentType === "quiz") {
+                db.all(
+                    `SELECT q.*, cat.name AS category_name, 'quiz' AS type, 'quiz' AS course_type
+                     FROM quizzes q
+                     LEFT JOIN categories cat ON cat.id = q.category_id
+                     ORDER BY RANDOM() LIMIT 3`,
+                    (err, quizzes) => {
+                        if (err) return res.status(500).json({ message: err.message });
+                        res.json(quizzes || []);
+                    }
+                );
+                return;
+            }
+
+            db.all(
                 `SELECT c.*, cat.name AS category_name
                  FROM courses c
                  LEFT JOIN categories cat ON c.category_id = cat.id
-                 WHERE c.title LIKE ?
-                 ORDER BY RANDOM() LIMIT 1`,
-                [`%${ruleResult.contentType}%`],
-                (err, course) => {
+                 WHERE LOWER(COALESCE(c.course_type, '')) = ?
+                    OR (? = 'text' AND LOWER(COALESCE(c.course_type, '')) = 'texte')
+                    OR (? = 'text' AND LOWER(COALESCE(c.course_type, '')) = 'pdf')
+                 ORDER BY RANDOM() LIMIT 3`,
+                [contentType, contentType, contentType],
+                (err, courses) => {
                     if (err) return res.status(500).json({ message: err.message });
-                    db.all(
-                        `SELECT c.*, cat.name AS category_name
-                         FROM courses c
-                         LEFT JOIN categories cat ON c.category_id = cat.id
-                         WHERE c.id != ?
-                         ORDER BY RANDOM() LIMIT 2`,
-                        [course?.id || 0],
-                        (err, extraCourses) => {
-                            if (err) return res.status(500).json({ message: err.message });
-                            const result = course ? [course, ...extraCourses] : extraCourses;
-                            res.json(result);
-                        }
-                    );
+                    res.json(courses || []);
                 }
             );
             return;

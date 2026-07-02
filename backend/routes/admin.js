@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const db = require("../database/database");
 const { getFirebaseAdmin } = require("../lib/firebaseAdmin");
+const { calculateOverallProgress } = require("../lib/progressMetrics");
 
 function runAsync(sql, params = []) {
     return new Promise((resolve, reject) => {
@@ -300,24 +301,14 @@ router.get("/users", (req, res) => {
             const users = rows.map(u => {
                 const course = Math.round(u.avg_course) || 0;
                 const quiz = Math.round(u.avg_quiz) || 0;
-
-                // Combined overall (average of both, if both > 0)
-                let overall;
-                if (course > 0 && quiz > 0) {
-                    overall = Math.round((course + quiz) / 2);
-                } else if (course > 0) {
-                    overall = course;
-                } else if (quiz > 0) {
-                    overall = quiz;
-                } else {
-                    overall = 0;
-                }
+                const overall = calculateOverallProgress(course, quiz);
 
                 return {
                     firebase_uid: u.firebase_uid,
                     name: u.name,
                     email: u.email,
                     created_at: u.created_at,
+                    avgProgress: overall,
                     overall_progress: overall,   // ← new field
                     completed: overall,          // keep compatibility
                 };
@@ -439,6 +430,7 @@ router.get("/users/:uid", (req, res) => {
                                         return "0m";
                                     }
                                 })();
+                                const totalSiteTimeFormatted = formatSeconds(totalSessionSeconds);
 
                                 // 6. ARCS responses (last 5)
                                 db.all(
@@ -472,43 +464,75 @@ router.get("/users/:uid", (req, res) => {
                                                 // 7. User badges (unchanged)
                                                 db.all(
                                                     `SELECT b.id, b.name, b.description, b.icon, b.category, ub.earned_at
-                                                    FROM user_badges ub
-                                                    JOIN badges b ON b.id = ub.badge_id
-                                                    WHERE ub.firebase_uid = ?
-                                                    ORDER BY ub.earned_at DESC`,
-                                                    [uid],
-                                                    (err, badges) => {
-                                                        if (err) badges = [];
+                                                            FROM user_badges ub
+                                                            JOIN badges b ON b.id = ub.badge_id
+                                                            WHERE ub.firebase_uid = ?
+                                                            ORDER BY ub.earned_at DESC`,
+                                                            [uid],
+                                                            (err, badges) => {
+                                                                if (err) badges = [];
 
-                                                        res.json({
-                                                            user: { ...user, total_time_watched: totalTimeFormatted, total_seconds: totalSeconds },
-                                                            courses: courses || [],
-                                                            activities: activities || [],
-                                                            sessions: sessions || [],
-                                                            sessionSummary: {
-                                                                currentContext,
-                                                                currentBatteryLevel,
-                                                                currentBatteryPercent,
-                                                                averageBatteryPercent,
-                                                                batteryStats,
-                                                                activeSessionsCount: activeSessions.length,
-                                                                activeDaysCount: activeDays.size,
-                                                                averageDailySeconds,
-                                                                averageDailyFormatted: formatSeconds(averageDailySeconds),
-                                                                totalSessionSeconds,
-                                                                totalSessionFormatted: formatSeconds(totalSessionSeconds),
-                                                                currentSessionDuration,
-                                                            },
-                                                            arcs: arcs || [],
-                                                            badges: badges || [],
-                                                            quizzes: quizzes || [],   // ← NEW
-                                                        });
+                                                                db.get(
+                                                                    `SELECT COALESCE(AVG(up.progress), 0) AS avg_course,
+                                                                            (SELECT COALESCE(ROUND(AVG(sq.score)), 0)
+                                                                             FROM (
+                                                                                 SELECT ua.quiz_id,
+                                                                                        ROUND(SUM(ua.is_correct)*100.0/COUNT(ua.id)) AS score
+                                                                                 FROM user_answers ua
+                                                                                 JOIN questions q ON q.id = ua.question_id
+                                                                                 WHERE ua.firebase_uid = ?
+                                                                                 GROUP BY ua.quiz_id
+                                                                             ) sq
+                                                                            ) AS avg_quiz
+                                                                     FROM users u
+                                                                     LEFT JOIN user_progress up ON up.firebase_uid = u.firebase_uid
+                                                                     WHERE u.firebase_uid = ?
+                                                                     GROUP BY u.firebase_uid`,
+                                                                    [uid, uid],
+                                                                    (progressErr, progressRow) => {
+                                                                        const courseAvg = progressErr ? 0 : Math.round(progressRow?.avg_course || 0);
+                                                                        const quizAvg = progressErr ? 0 : Math.round(progressRow?.avg_quiz || 0);
+                                                                        const overallProgress = calculateOverallProgress(courseAvg, quizAvg);
+
+                                                                        res.json({
+                                                                            user: {
+                                                                                ...user,
+                                                                                total_time_watched: totalTimeFormatted,
+                                                                                total_site_time: formatSeconds(totalSessionSeconds),
+                                                                                total_seconds: totalSeconds,
+                                                                                avgProgress: overallProgress,
+                                                                                overall_progress: overallProgress,
+                                                                            },
+                                                                            courses: courses || [],
+                                                                            activities: activities || [],
+                                                                            sessions: sessions || [],
+                                                                            sessionSummary: {
+                                                                                currentContext,
+                                                                                currentBatteryLevel,
+                                                                                currentBatteryPercent,
+                                                                                averageBatteryPercent,
+                                                                                batteryStats,
+                                                                                activeSessionsCount: activeSessions.length,
+                                                                                activeDaysCount: activeDays.size,
+                                                                                averageDailySeconds,
+                                                                                averageDailyFormatted: formatSeconds(averageDailySeconds),
+                                                                                totalSessionSeconds,
+                                                                                totalSessionFormatted: formatSeconds(totalSessionSeconds),
+                                                                                totalSiteTimeFormatted,
+                                                                                currentSessionDuration,
+                                                                            },
+                                                                            arcs: arcs || [],
+                                                                            badges: badges || [],
+                                                                            quizzes: quizzes || [],
+                                                                        });
+                                                                    }
+                                                                );
+                                                            }
+                                                        );
                                                     }
                                                 );
                                             }
                                         );
-                                    }
-                                );
                             }
                         );
                     }

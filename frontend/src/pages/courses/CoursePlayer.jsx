@@ -27,6 +27,13 @@ export default function CoursePlayer() {
   const completedRef = useRef(false);
   const focusLostRef = useRef(false);
 
+  const isVideoCourse = course?.course_type === "video";
+  const isDocumentCourse =
+    course?.course_type === "text" ||
+    course?.course_type === "infographie" ||
+    /\.pdf($|\?)/i.test(course?.media || "") ||
+    /^data:application\/pdf/i.test(course?.media || "");
+
   const getCurrentTime = useCallback(() => {
     if (videoRef.current) return videoRef.current.currentTime;
     if (playerRef.current?.getCurrentTime) return playerRef.current.getCurrentTime();
@@ -75,7 +82,10 @@ export default function CoursePlayer() {
             .catch(console.error);
         }
       })
-      .catch(() => { setError("Cours introuvable."); setLoading(false); });
+      .catch(() => {
+        setError("Cours introuvable.");
+        setLoading(false);
+      });
   }, [id]);
 
   useEffect(() => {
@@ -105,12 +115,12 @@ export default function CoursePlayer() {
       });
   }, [currentUser, id]);
 
-  const saveProgress = useCallback(() => {
-    if (!currentUser || !id) return;
+  const saveProgress = useCallback(async () => {
+    if (!currentUser || !id) return null;
     const currentTime = getCurrentTime();
-    if (currentTime === null) return;
+    if (currentTime === null) return null;
 
-    fetch("http://localhost:5000/api/progress", {
+    const res = await fetch("http://localhost:5000/api/progress", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -118,19 +128,42 @@ export default function CoursePlayer() {
         course_id: id,
         watched_segments: [[0, currentTime]],
       }),
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data?.progress !== undefined) setProgress(data.progress);
-      })
-      .catch(console.error);
+    });
+    const data = await res.json();
+    if (data?.progress !== undefined) setProgress(data.progress);
+    return data;
   }, [currentUser, id, getCurrentTime]);
 
+  const completeCourse = useCallback(async (method = "manual") => {
+    if (!currentUser || !id) return;
+
+    if (isVideoCourse) {
+      await saveProgress().catch(console.error);
+    }
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/progress/${id}/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ firebase_uid: currentUser.uid }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setProgress(100);
+        logActivity("completed", { progress: 100, method });
+      } else {
+        alert(data.message || "Impossible de valider ce cours.");
+      }
+    } catch (e) {
+      alert("Erreur lors de la validation");
+    }
+  }, [currentUser, id, isVideoCourse, logActivity, saveProgress]);
+
   useEffect(() => {
-    if (!course) return;
+    if (!course || !isVideoCourse) return;
     const interval = setInterval(saveProgress, 10000);
     return () => clearInterval(interval);
-  }, [course, saveProgress]);
+  }, [course, isVideoCourse, saveProgress]);
 
   const isYouTube = (url) => url?.includes("youtube.com") || url?.includes("youtu.be");
   const getYouTubeVideoId = (url) => {
@@ -161,6 +194,13 @@ export default function CoursePlayer() {
               logActivity("started", { progress: 0 });
             }
           },
+          onStateChange: (event) => {
+            if (event.data === window.YT.PlayerState.ENDED) {
+              completeCourse("auto");
+            } else if (event.data === window.YT.PlayerState.PAUSED) {
+              saveProgress().catch(console.error);
+            }
+          },
           onError: () => setError("Erreur de lecture YouTube."),
         },
       });
@@ -183,7 +223,7 @@ export default function CoursePlayer() {
         playerRef.current = null;
       }
     };
-  }, [course]);
+  }, [course, completeCourse, logActivity, saveProgress]);
 
   const handlePlay = () => {
     if (!startedRef.current) {
@@ -191,8 +231,12 @@ export default function CoursePlayer() {
       logActivity("started", { progress: 0 });
     }
   };
-  const handlePause = () => saveProgress();
-  const handleEnded = () => saveProgress();
+  const handlePause = () => {
+    if (isVideoCourse) saveProgress().catch(console.error);
+  };
+  const handleEnded = () => {
+    if (isVideoCourse) completeCourse("auto");
+  };
 
   useEffect(() => {
     const onBlur = () => { focusLostRef.current = true; };
@@ -296,12 +340,6 @@ export default function CoursePlayer() {
     return <div className="min-h-screen flex flex-col items-center justify-center"><p className="text-red-600">{error || "Cours non disponible"}</p><button onClick={() => navigate("/courses")} className="mt-4 px-4 py-2 bg-gray-200 rounded-xl">Retour aux cours</button></div>;
   }
 
-  const isDocumentCourse =
-    course.course_type === "text" ||
-    course.course_type === "infographie" ||
-    /\.pdf($|\?)/i.test(course.media || "") ||
-    /^data:application\/pdf/i.test(course.media || "");
-
   return (
     <div className="min-h-screen bg-white">
       <Header />
@@ -369,31 +407,14 @@ export default function CoursePlayer() {
               </div>
             </div>
 
-            <button
-              onClick={async () => {
-                if (progress < 100) {
-                  try {
-                    const res = await fetch(`http://localhost:5000/api/progress/${id}/complete`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ firebase_uid: currentUser.uid })
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                      setProgress(100);
-                      logActivity("completed", { progress: 100, method: "manual" });
-                    } else {
-                      alert(data.message || "Vous n'avez pas terminé les prérequis (visionnage ≥ 90% ou quiz réussi).");
-                    }
-                  } catch (e) {
-                    alert("Erreur lors de la validation");
-                  }
-                }
-              }}
-              className="mt-6 w-full inline-flex items-center justify-center gap-2 bg-black text-white font-semibold py-2.5 px-6 rounded-xl hover:bg-gray-900 transition"
-            >
-              <FaCheck /> Marquer comme terminé
-            </button>
+            {!isVideoCourse && (
+              <button
+                onClick={() => completeCourse("manual")}
+                className="mt-6 w-full inline-flex items-center justify-center gap-2 bg-black text-white font-semibold py-2.5 px-6 rounded-xl hover:bg-gray-900 transition"
+              >
+                <FaCheck /> Marquer comme terminé
+              </button>
+            )}
           </aside>
         </div>
       </div>

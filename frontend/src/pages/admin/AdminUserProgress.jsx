@@ -11,26 +11,55 @@ export default function AdminUserProgress() {
   const { uid } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState(null);
+  const [aiRecommendation, setAiRecommendation] = useState("—");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!uid) return;
     setLoading(true);
+    let alive = true;
+
     fetch(`http://localhost:5000/api/admin/users/${uid}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Erreur ${res.status}`);
-        return res.json();
+      .then((userRes) => {
+        if (!userRes.ok) throw new Error(`Erreur ${userRes.status}`);
+        return userRes.json();
       })
-      .then((json) => {
-        setData(json);
+      .then((userJson) => {
+        if (!alive) return;
+        setData(userJson);
         setError("");
+        void fetch("http://localhost:5000/api/recommendations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ firebase_uid: uid }),
+        })
+          .then((res) => res.ok ? res.json() : null)
+          .then((recommendation) => {
+            if (!alive || !recommendation) return;
+            const type = String(recommendation.predictedType || recommendation.course_type || "").trim();
+            if (!type) {
+              setAiRecommendation("—");
+              return;
+            }
+            setAiRecommendation(type.charAt(0).toUpperCase() + type.slice(1));
+          })
+          .catch((recommendationErr) => {
+            console.error(recommendationErr);
+          });
       })
       .catch((err) => {
+        if (!alive) return;
         console.error(err);
         setError(err.message);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
   }, [uid]);
 
   if (loading) {
@@ -59,9 +88,8 @@ export default function AdminUserProgress() {
 
   const totalCourses = courses.length;
   const completedCourses = courses.filter(c => c.progress >= 100).length;
-  const overallProgress = totalCourses > 0
-    ? Math.round(courses.reduce((sum, c) => sum + (c.progress || 0), 0) / totalCourses)
-    : 0;
+  const overallProgress = Math.min(100, Number(user.avgProgress ?? user.overall_progress ?? 0));
+  const recentQuizzes = quizzes.slice(0, 3);
 
   return (
     <>
@@ -97,11 +125,12 @@ export default function AdminUserProgress() {
         <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
           <FaChartLine className="text-purple-600" /> Profil d'apprentissage
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <div><p className="text-xs text-gray-500">Âge</p><p className="text-sm font-semibold">{user.age || "—"}</p></div>
           <div><p className="text-xs text-gray-500">Niveau d'études</p><p className="text-sm font-semibold">{user.education || "—"}</p></div>
           <div><p className="text-xs text-gray-500">Maîtrise du sujet</p><p className="text-sm font-semibold">{user.mastery || "—"}</p></div>
           <div><p className="text-xs text-gray-500">Niveau de compétence</p><p className="text-sm font-semibold">{user.competence || "—"}</p></div>
+          <div><p className="text-xs text-gray-500">Recommendation AI</p><p className="text-sm font-semibold">{aiRecommendation}</p></div>
         </div>
       </div>
 
@@ -147,7 +176,9 @@ export default function AdminUserProgress() {
         <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
           <FaClock className="text-purple-600" /> Temps total regardé
         </h3>
-        <p className="text-3xl font-extrabold text-gray-900">{user.total_time_watched}</p>
+        <p className="text-3xl font-extrabold text-gray-900">
+          {sessionSummary?.currentSessionDuration || user.total_site_time || "0m"}
+        </p>
       </div>
 
       {/* ---- 5. Cours suivis ---- */}
@@ -176,13 +207,13 @@ export default function AdminUserProgress() {
       </div>
 
       {/* ---- 6. Quiz complétés ---- */}
-      {quizzes.length > 0 && (
+      {recentQuizzes.length > 0 && (
         <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 mb-6">
           <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
             <FaQuestionCircle className="text-purple-600" /> Quiz effectués
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {quizzes.map((quiz) => {
+            {recentQuizzes.map((quiz) => {
               const isSuccess = quiz.score >= 80;
               return (
                 <div key={quiz.quiz_id} className="bg-gray-50 rounded-xl p-4 border border-gray-100">

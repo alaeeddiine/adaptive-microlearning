@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FaChartBar, FaCheckCircle, FaClock, FaTrophy, FaArrowUp, FaFire,
 } from "react-icons/fa";
@@ -35,9 +36,11 @@ const ActivityChart = ({ data }) => {
 };
 
 export default function Progress() {
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [stats, setStats] = useState(null);
   const [weeklyActivity, setWeeklyActivity] = useState([]);
+  const [activities, setActivities] = useState([]);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -49,10 +52,11 @@ export default function Progress() {
     Promise.all([
       fetch(`http://localhost:5000/api/progress/stats/${uid}`).then(r => r.json()),
       fetch(`http://localhost:5000/api/activity/weekly/${uid}`).then(r => r.json()),
+      fetch(`http://localhost:5000/api/activity/user/${uid}`).then(r => r.json()),
       fetch(`http://localhost:5000/api/courses/user/${uid}`).then(r => r.json()),
     ])
-      .then(([statsData, weekly, userCourses]) => {
-        setStats(statsData || { avgProgress: 0, totalWatchTime: "0m", badges: 0, completedCourses: 0, courseCount: 0 });
+      .then(([statsData, weekly, userActivities, userCourses]) => {
+        setStats(statsData || { avgProgress: 0, overallProgress: 0, totalWatchTime: "0m", badges: 0, completedCourses: 0, courseCount: 0 });
         const days = [];
         for (let i = 6; i >= 0; i--) {
           const d = new Date();
@@ -63,6 +67,7 @@ export default function Progress() {
           });
         }
         setWeeklyActivity(days);
+        setActivities(Array.isArray(userActivities) ? userActivities : []);
         setCourses(Array.isArray(userCourses) ? userCourses : []);
         setLoading(false);
       })
@@ -81,11 +86,35 @@ export default function Progress() {
     );
   }
 
+  const mapQuiz = (act) => {
+    let score = null;
+    let title = act.quiz_title || "Quiz";
+    try {
+      const details = typeof act.event_data === "string" ? JSON.parse(act.event_data) : act.event_data || {};
+      score = details.score ?? null;
+      title = details.quiz_title || title;
+    } catch {}
+
+    return {
+      id: act.id,
+      title,
+      score,
+      timestamp: new Date(act.created_at + "Z").toLocaleString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      completed: score === 100,
+    };
+  };
+
+  const recentQuizzes = activities
+    .filter((act) => act.event_type === "quiz_submitted")
+    .slice(0, 3)
+    .map(mapQuiz);
+  const recentCourses = courses.slice(0, 3);
+
   const kpis = [
     {
       icon: FaCheckCircle,
       color: "bg-green-100 text-green-600",
-      value: `${stats?.avgProgress ?? 0}%`,
+      value: `${stats?.overallProgress ?? stats?.avgProgress ?? 0}%`,
       label: "Progression moyenne",
     },
     {
@@ -158,30 +187,80 @@ export default function Progress() {
         )}
       </div>
 
-      <div className="bg-white rounded-[20px] sm:rounded-[24px] p-4 sm:p-6 shadow-sm border border-gray-100 hover-elevate">
-        <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-4">Répartition par cours</h3>
-        {courses.length > 0 ? (
-          <div className="space-y-4">
-            {courses.map(course => (
-              <div key={course.id}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="font-medium text-gray-900 truncate">{course.title}</span>
-                  <span className="text-gray-600">{course.progress || 0}%</span>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-2">
-                  <div
-                    className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full"
-                    style={{ width: `${course.progress || 0}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
+        <div className="bg-white rounded-[20px] sm:rounded-[24px] p-4 sm:p-6 shadow-sm border border-gray-100 hover-elevate">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base sm:text-lg font-bold text-gray-900">Cours récents</h3>
+            <button onClick={() => navigate("/courses")} className="text-xs sm:text-sm text-[#5B4BFF] font-semibold hover:underline">Voir tout</button>
           </div>
-        ) : (
-          <p className="text-gray-400 text-sm py-4 text-center">
-            Aucun cours commencé. Lancez un cours depuis "Mes cours".
-          </p>
-        )}
+          <div className="space-y-3">
+            {recentCourses.length ? (
+              recentCourses.map((course) => (
+                <div key={course.id} className="flex items-center gap-3 p-2 sm:p-3 rounded-2xl hover:bg-gray-50 transition">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${Number(course.progress) >= 100 ? "bg-green-100 text-green-600" : "bg-indigo-100 text-indigo-600"}`}>
+                    {Number(course.progress) >= 100 ? "✓" : "📘"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{course.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {course.progress != null ? `Progression : ${course.progress}%` : "Cours lancé"}
+                    </p>
+                  </div>
+                  <span className="text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">{course.category_name || ""}</span>
+                  <button
+                    onClick={() => navigate("/courses")}
+                    className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold shadow-sm whitespace-nowrap ${
+                      Number(course.progress) >= 100
+                        ? "bg-green-50 border border-green-200 text-green-700 hover:bg-green-100"
+                        : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    {Number(course.progress) >= 100 ? "Validé" : "Continuer"}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-gray-400 py-6">Aucun cours récent.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-[20px] sm:rounded-[24px] p-4 sm:p-6 shadow-sm border border-gray-100 hover-elevate">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base sm:text-lg font-bold text-gray-900">Quiz récents</h3>
+            <button onClick={() => navigate("/quiz")} className="text-xs sm:text-sm text-[#5B4BFF] font-semibold hover:underline">Voir tout</button>
+          </div>
+          <div className="space-y-3">
+            {recentQuizzes.length ? (
+              recentQuizzes.map((quiz) => (
+                <div key={quiz.id} className="flex items-center gap-3 p-2 sm:p-3 rounded-2xl hover:bg-gray-50 transition">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${quiz.completed ? "bg-green-100 text-green-600" : "bg-purple-100 text-purple-600"}`}>
+                    {quiz.completed ? "✓" : "❓"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{quiz.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {quiz.score != null ? `Score : ${quiz.score}%` : "Quiz soumis"}
+                    </p>
+                  </div>
+                  <span className="text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">{quiz.timestamp}</span>
+                  <button
+                    onClick={() => navigate("/quiz")}
+                    className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-semibold shadow-sm whitespace-nowrap ${
+                      quiz.completed
+                        ? "bg-green-50 border border-green-200 text-green-700 hover:bg-green-100"
+                        : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    {quiz.completed ? "Validé" : "Continuer"}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-gray-400 py-6">Aucun quiz récent.</p>
+            )}
+          </div>
+        </div>
       </div>
     </>
   );

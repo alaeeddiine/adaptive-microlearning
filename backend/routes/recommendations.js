@@ -3,155 +3,264 @@ const router = express.Router();
 const db = require("../database/database");
 const fetch = require("node-fetch");
 
+const dbGet = (sql, params = []) =>
+    new Promise((resolve, reject) => {
+        db.get(sql, params, (err, row) => {
+            if (err) return reject(err);
+            resolve(row || null);
+        });
+    });
+
+const dbAll = (sql, params = []) =>
+    new Promise((resolve, reject) => {
+        db.all(sql, params, (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows || []);
+        });
+    });
+
+const normalizeType = (value) =>
+    String(value || "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+const formatTypeLabel = (value) => {
+    const type = normalizeType(value);
+    if (type === "video") return "Vidéo";
+    if (type === "text" || type === "texte") return "Texte";
+    if (type === "infographie") return "Infographie";
+    if (type === "quiz") return "Quiz";
+    if (!type) return "Cours";
+    return type.charAt(0).toUpperCase() + type.slice(1);
+};
+
+const inferCourseType = (row) => {
+    const explicitType = normalizeType(row?.course_type);
+    if (explicitType === "texte") return "text";
+    if (explicitType === "video" || explicitType === "text" || explicitType === "infographie" || explicitType === "audio") {
+        return explicitType;
+    }
+
+    const media = normalizeType(row?.media);
+    if (
+        media.includes("youtube.com") ||
+        media.includes("youtu.be") ||
+        media.endsWith(".mp4") ||
+        media.endsWith(".webm") ||
+        media.endsWith(".mov") ||
+        media.endsWith(".m4v")
+    ) {
+        return "video";
+    }
+
+    if (media.endsWith(".png") || media.endsWith(".jpg") || media.endsWith(".jpeg") || media.endsWith(".webp") || media.endsWith(".gif") || media.endsWith(".svg")) {
+        return "infographie";
+    }
+
+    if (media.endsWith(".pdf")) {
+        return explicitType === "infographie" ? "infographie" : "text";
+    }
+
+    return explicitType || "video";
+};
+
+const decorateCourses = (rows) =>
+    rows.map((row) => ({
+        ...row,
+        type: "course",
+        course_type: inferCourseType(row),
+    }));
+
+const decorateQuizzes = (rows) =>
+    rows.map((row) => ({
+        ...row,
+        type: "quiz",
+        course_type: "quiz",
+    }));
+
+const isNumericIdList = (values) =>
+    values.length > 0 && values.every((value) => {
+        const parsed = Number(value);
+        return Number.isInteger(parsed) && String(parsed) === String(value).trim();
+    });
+
+const fetchAllContent = async () => {
+    const [courses, quizzes] = await Promise.all([
+        dbAll(
+            `SELECT c.*, cat.name AS category_name
+             FROM courses c
+             LEFT JOIN categories cat ON c.category_id = cat.id
+             ORDER BY cat.name, c.title`
+        ),
+        dbAll(
+            `SELECT q.*, cat.name AS category_name
+             FROM quizzes q
+             LEFT JOIN categories cat ON cat.id = q.category_id
+             ORDER BY cat.name, q.title`
+        ),
+    ]);
+
+    return [...decorateCourses(courses), ...decorateQuizzes(quizzes)];
+};
+
+const fetchContentByIds = async (ids) => {
+    if (!ids.length) return [];
+    const placeholders = ids.map(() => "?").join(",");
+    const [courses, quizzes] = await Promise.all([
+        dbAll(
+            `SELECT c.*, cat.name AS category_name
+             FROM courses c
+             LEFT JOIN categories cat ON c.category_id = cat.id
+             WHERE c.id IN (${placeholders})`,
+            ids
+        ),
+        dbAll(
+            `SELECT q.*, cat.name AS category_name
+             FROM quizzes q
+             LEFT JOIN categories cat ON cat.id = q.category_id
+             WHERE q.id IN (${placeholders})`,
+            ids
+        ),
+    ]);
+
+    const contentMap = new Map();
+    decorateCourses(courses).forEach((item) => contentMap.set(`course:${item.id}`, item));
+    decorateQuizzes(quizzes).forEach((item) => contentMap.set(`quiz:${item.id}`, item));
+
+    return ids
+        .map((id) => contentMap.get(`course:${id}`) || contentMap.get(`quiz:${id}`))
+        .filter(Boolean);
+};
+
+const fetchRecommendedContent = async (recommendations) => {
+    const list = Array.isArray(recommendations)
+        ? recommendations.filter((value) => value !== null && value !== undefined && String(value).trim() !== "")
+        : [recommendations].filter((value) => value !== null && value !== undefined && String(value).trim() !== "");
+
+    if (list.length === 0) return { predictedType: null, courses: [] };
+
+    if (isNumericIdList(list)) {
+        return { predictedType: null, courses: await fetchContentByIds(list.map((value) => Number(value))) };
+    }
+
+    const predictedType = normalizeType(list[0]);
+    const allContent = await fetchAllContent();
+
+    if (predictedType === "quiz") {
+        return {
+            predictedType: "Quiz",
+            courses: allContent.filter((item) => item.type === "quiz"),
+        };
+    }
+
+    if (predictedType === "video") {
+        return {
+            predictedType: "Vidéo",
+            courses: allContent.filter((item) => item.type === "course" && inferCourseType(item) === "video"),
+        };
+    }
+
+    if (predictedType === "text" || predictedType === "texte") {
+        return {
+            predictedType: "Texte",
+            courses: allContent.filter((item) => item.type === "course" && inferCourseType(item) === "text"),
+        };
+    }
+
+    if (predictedType === "infographie") {
+        return {
+            predictedType: "Infographie",
+            courses: allContent.filter((item) => item.type === "course" && inferCourseType(item) === "infographie"),
+        };
+    }
+
+    if (predictedType === "audio") {
+        return {
+            predictedType: "Audio",
+            courses: allContent.filter((item) => item.type === "course" && inferCourseType(item) === "audio"),
+        };
+    }
+
+    return {
+        predictedType: formatTypeLabel(predictedType),
+        courses: allContent.filter((item) => {
+            if (item.type === "quiz") return false;
+            const courseType = inferCourseType(item);
+            return !predictedType || courseType === predictedType;
+        }),
+    };
+};
+
 // POST /api/recommendations
 router.post("/", async (req, res) => {
     const { firebase_uid } = req.body;
     if (!firebase_uid) return res.status(400).json({ message: "firebase_uid requis" });
 
-    // Récupérer le groupe A/B
-    db.get("SELECT ab_group FROM users WHERE firebase_uid = ?", [firebase_uid], async (err, user) => {
-        if (err) return res.status(500).json({ message: err.message });
+    try {
+        const user = await dbGet("SELECT ab_group FROM users WHERE firebase_uid = ?", [firebase_uid]);
         if (!user) return res.status(404).json({ message: "Utilisateur non trouvé" });
 
         const abGroup = user.ab_group || "A";
 
-        // ---------- GROUPE B : tout le contenu ----------
         if (abGroup === "B") {
-            // Récupérer tous les cours
-            db.all(
-                `SELECT c.*, cat.name AS category_name, 'course' AS type
+            const courses = await dbAll(
+                `SELECT c.*, cat.name AS category_name
                  FROM courses c
                  LEFT JOIN categories cat ON c.category_id = cat.id
-                 ORDER BY cat.name, c.title`,
-                (err, courses) => {
-                    if (err) { courses = []; }
-
-                    // Récupérer tous les quiz
-                    db.all(
-                        `SELECT q.*, cat.name AS category_name, 'quiz' AS type
-                         FROM quizzes q
-                         LEFT JOIN categories cat ON cat.id = q.category_id
-                         ORDER BY cat.name, q.title`,
-                        (err, quizzes) => {
-                            if (err) { quizzes = []; }
-                            res.json({ predictedType: null, courses: [...courses, ...quizzes] });
-                        }
-                    );
-                }
+                 ORDER BY cat.name, c.title`
             );
-            return;
+            const quizzes = await dbAll(
+                `SELECT q.*, cat.name AS category_name
+                 FROM quizzes q
+                 LEFT JOIN categories cat ON cat.id = q.category_id
+                 ORDER BY cat.name, q.title`
+            );
+            return res.json({ predictedType: null, courses: [...decorateCourses(courses), ...decorateQuizzes(quizzes)] });
         }
 
-        // ---------- GROUPE A : recommandation personnalisée ----------
-        db.get("SELECT * FROM users WHERE firebase_uid = ?", [firebase_uid], async (err, userProfile) => {
-            if (err) return res.status(500).json({ message: err.message });
-            if (!userProfile) return res.status(404).json({ message: "Profil non trouvé" });
+        const userProfile = await dbGet("SELECT * FROM users WHERE firebase_uid = ?", [firebase_uid]);
+        if (!userProfile) return res.status(404).json({ message: "Profil non trouvé" });
 
-            db.get(
-                `SELECT * FROM session_context
-                WHERE firebase_uid = ?
-                ORDER BY created_at DESC LIMIT 1`,
-                [firebase_uid],
-                async (err, lastSession) => {
-                    if (err) lastSession = {};
+        const lastSession = await dbGet(
+            `SELECT * FROM session_context
+             WHERE firebase_uid = ?
+             ORDER BY created_at DESC LIMIT 1`,
+            [firebase_uid]
+        );
 
-                    const features = {
-                        age: userProfile.age || "21-30",
-                        education: userProfile.education || "Université",
-                        mastery: userProfile.mastery || "Intermédiaire",
-                        competence: userProfile.competence || "Intermédiaire",
-                        ...(lastSession ? {
-                            time_available: lastSession.time_available || "15-30 min",
-                            connection_level: lastSession.connection_level || "Élevé",
-                            device_type: lastSession.device_type || "Mobile",
-                            battery_level: lastSession.battery_level || "Moyen",
-                            time_of_day: lastSession.time_of_day || "Après-midi",
-                        } : {}),
-                    };
+        const features = {
+            age: userProfile.age || "21-30",
+            education: userProfile.education || "Université",
+            mastery: userProfile.mastery || "Intermédiaire",
+            competence: userProfile.competence || "Intermédiaire",
+            ...(lastSession
+                ? {
+                      time_available: lastSession.time_available || "15-30 min",
+                      connection_level: lastSession.connection_level || "Élevé",
+                      device_type: lastSession.device_type || "Mobile",
+                      battery_level: lastSession.battery_level || "Moyen",
+                      time_of_day: lastSession.time_of_day || "Après-midi",
+                  }
+                : {}),
+        };
 
-                    try {
-                        const flaskResponse = await fetch("http://localhost:5001/predict", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ features }),
-                        });
-                        const result = await flaskResponse.json();
-                        if (result.error) return res.json({ predictedType: null, courses: [] });
-
-                        const recommendations = result.recommendations;
-                        if (!recommendations || recommendations.length === 0) {
-                            return res.json({ predictedType: null, courses: [] });
-                        }
-
-                        const contentType = Array.isArray(recommendations) ? recommendations[0] : recommendations;
-
-                        // ---- SMART MAPPING based on predicted type ----
-                        if (contentType.toLowerCase() === "quiz") {
-                            // Return all quizzes
-                            db.all(
-                                `SELECT q.*, cat.name AS category_name, 'quiz' AS type
-                                FROM quizzes q
-                                LEFT JOIN categories cat ON cat.id = q.category_id
-                                ORDER BY cat.name, q.title`,
-                                (err, quizzes) => {
-                                    if (err) quizzes = [];
-                                    res.json({ predictedType: "Quiz", courses: quizzes });
-                                }
-                            );
-                            return;
-                        }
-
-                        if (contentType.toLowerCase() === "vidéo" || contentType.toLowerCase() === "video") {
-                            // Return courses that have a media URL (assumed to be video)
-                            db.all(
-                                `SELECT c.*, cat.name AS category_name, 'course' AS type
-                                FROM courses c
-                                LEFT JOIN categories cat ON c.category_id = cat.id
-                                WHERE c.media IS NOT NULL AND c.media != ''
-                                ORDER BY cat.name, c.title`,
-                                (err, courses) => {
-                                    if (err) courses = [];
-                                    // Also include quizzes that might be relevant? No, video is only courses.
-                                    res.json({ predictedType: "Vidéo", courses });
-                                }
-                            );
-                            return;
-                        }
-
-                        // For other types (Infographie, Texte, Audio, etc.), use text matching
-                        const likePattern = `%${contentType}%`;
-                        db.all(
-                            `SELECT c.*, cat.name AS category_name, 'course' AS type
-                            FROM courses c
-                            LEFT JOIN categories cat ON c.category_id = cat.id
-                            WHERE c.title LIKE ? OR c.description LIKE ?
-                            ORDER BY cat.name, c.title`,
-                            [likePattern, likePattern],
-                            (err, courses) => {
-                                if (err) courses = [];
-                                db.all(
-                                    `SELECT q.*, cat.name AS category_name, 'quiz' AS type
-                                    FROM quizzes q
-                                    LEFT JOIN categories cat ON cat.id = q.category_id
-                                    WHERE q.title LIKE ? OR q.description LIKE ?
-                                    ORDER BY cat.name, q.title`,
-                                    [likePattern, likePattern],
-                                    (err, quizzes) => {
-                                        if (err) quizzes = [];
-                                        const all = [...courses, ...quizzes];
-                                        res.json({ predictedType: contentType, courses: all });
-                                    }
-                                );
-                            }
-                        );
-                    } catch (err) {
-                        console.error("Flask error:", err);
-                        res.status(500).json({ message: "Erreur du service de recommandation" });
-                    }
-                }
-            );
+        const flaskResponse = await fetch("http://localhost:5001/predict", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ features }),
         });
-    });
+
+        const result = await flaskResponse.json();
+        if (result.error) return res.json({ predictedType: null, courses: [] });
+
+        const recommendations = await fetchRecommendedContent(result.recommendations);
+        return res.json(recommendations);
+    } catch (err) {
+        console.error("Flask error:", err);
+        return res.status(500).json({ message: "Erreur du service de recommandation" });
+    }
 });
 
 module.exports = router;

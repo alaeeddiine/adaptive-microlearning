@@ -2,12 +2,29 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FaSearch, FaFilter, FaSort, FaSortUp, FaSortDown, FaPlay,
-  FaBookOpen, FaQuestionCircle,
+  FaQuestionCircle, FaPlayCircle, FaFileAlt, FaImage,
 } from "react-icons/fa";
 import Header from "../../components/Header";
 import useCourseCatalog from "../../hooks/useCourseCatalog";
 
 const categories = ["Tous", "Développement", "Données", "Design", "Outils"];
+
+const inferContentType = (item = {}) => {
+  if (item.type === "quiz") return "quiz";
+  const courseType = String(item.course_type || "").trim().toLowerCase();
+  if (courseType) return courseType;
+  const media = String(item.media || "");
+  if (/\.pdf($|\?)/i.test(media) || /^data:application\/pdf/i.test(media)) return "text";
+  if (/youtube\.com|youtu\.be/i.test(media)) return "video";
+  return "video";
+};
+
+const contentTypeMeta = {
+  video: { label: "Video", icon: FaPlayCircle, iconClass: "text-blue-500" },
+  text: { label: "Text", icon: FaFileAlt, iconClass: "text-emerald-500" },
+  infographie: { label: "Infographie", icon: FaImage, iconClass: "text-amber-500" },
+  quiz: { label: "Quiz", icon: FaQuestionCircle, iconClass: "text-purple-500" },
+};
 
 export default function Courses() {
   const { courses, loading } = useCourseCatalog();
@@ -31,7 +48,7 @@ export default function Courses() {
       result = result.filter(c => c.title.toLowerCase().includes(term));
     }
 
-    if (sortField) {
+      if (sortField) {
       result.sort((a, b) => {
         let valA, valB;
         switch (sortField) {
@@ -41,6 +58,10 @@ export default function Courses() {
           case "duration":
             valA = (a[sortField] || "").toLowerCase();
             valB = (b[sortField] || "").toLowerCase();
+            break;
+          case "content_type":
+            valA = inferContentType(a);
+            valB = inferContentType(b);
             break;
           case "progress":
             valA = a.progress || 0;
@@ -154,7 +175,7 @@ export default function Courses() {
             <tr>
               {[
                 { label: "Nom", field: "title" },
-                { label: "Type", field: "type" },
+                { label: "Type contenu", field: "content_type" },
                 { label: "Catégorie", field: "category_name" },
                 { label: "Niveau", field: "level" },
                 { label: "Progression", field: "progress" },
@@ -174,24 +195,26 @@ export default function Courses() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {filteredAndSorted.map((item) => (
-              <tr key={`${item.type}-${item.id}`} className="hover:bg-gray-50 transition">
-                <td className="px-4 py-3 font-medium text-gray-900">{item.title}</td>
-                <td className="px-4 py-3 text-gray-600">
-                  {item.type === "quiz" ? (
-                    <span className="flex items-center gap-1">
-                      <FaQuestionCircle className="text-purple-500" /> Quiz
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1">
-                      <FaBookOpen className="text-purple-500" /> Cours
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-gray-600">{item.category_name || "—"}</td>
-                <td className="px-4 py-3 text-gray-600">
-                  {item.type === "course" ? item.level || "—" : "—"}
-                </td>
+              {filteredAndSorted.map((item) => (
+                <tr key={`${item.type}-${item.id}`} className="hover:bg-gray-50 transition">
+                  <td className="px-4 py-3 font-medium text-gray-900">{item.title}</td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {(() => {
+                      const type = inferContentType(item);
+                      const meta = contentTypeMeta[type] || contentTypeMeta.video;
+                      const Icon = meta.icon;
+                      return (
+                        <span className="inline-flex items-center gap-1">
+                          <Icon className={meta.iconClass} />
+                          {meta.label}
+                        </span>
+                      );
+                    })()}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">{item.category_name || "—"}</td>
+                  <td className="px-4 py-3 text-gray-600">
+                  {item.type === "quiz" ? "—" : item.level || "—"}
+                  </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <div className="w-20 bg-gray-100 rounded-full h-2">

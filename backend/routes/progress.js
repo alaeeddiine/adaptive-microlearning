@@ -38,6 +38,52 @@ function parseDuration(dur) {
     return 0;
 }
 
+function computeOverallProgress(firebase_uid, callback) {
+    db.get(
+        "SELECT COALESCE(ROUND(AVG(progress)), 0) AS courseAvg FROM user_progress WHERE firebase_uid = ?",
+        [firebase_uid],
+        (courseErr, courseRow) => {
+            if (courseErr) return callback(courseErr);
+
+            db.get(
+                `
+                SELECT COALESCE(ROUND(AVG(sq.score)), 0) AS quizAvg
+                FROM (
+                    SELECT ua.quiz_id,
+                           ROUND(SUM(ua.is_correct) * 100.0 / COUNT(ua.id)) AS score
+                    FROM user_answers ua
+                    JOIN questions q ON q.id = ua.question_id
+                    WHERE ua.firebase_uid = ?
+                    GROUP BY ua.quiz_id
+                ) sq
+                `,
+                [firebase_uid],
+                (quizErr, quizRow) => {
+                    if (quizErr) return callback(quizErr);
+
+                    const courseAvg = Number(courseRow?.courseAvg) || 0;
+                    const quizAvg = Number(quizRow?.quizAvg) || 0;
+                    let overallProgress = 0;
+
+                    if (courseAvg > 0 && quizAvg > 0) {
+                        overallProgress = Math.round((courseAvg + quizAvg) / 2);
+                    } else if (courseAvg > 0) {
+                        overallProgress = courseAvg;
+                    } else if (quizAvg > 0) {
+                        overallProgress = quizAvg;
+                    }
+
+                    callback(null, {
+                        courseAvg,
+                        quizAvg,
+                        overallProgress,
+                    });
+                }
+            );
+        }
+    );
+}
+
 function awardBadges(firebase_uid) {
     db.get(
         "SELECT COUNT(DISTINCT course_id) AS started FROM user_progress WHERE firebase_uid = ?",
@@ -175,15 +221,23 @@ router.get("/stats/:uid", (req, res) => {
             const minutes = Math.floor((totalWatchTime % 3600) / 60);
             const formattedTime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
-            db.get("SELECT COUNT(*) AS count FROM user_badges WHERE firebase_uid = ?", [uid], (err, badgeRow) => {
-                const badgeCount = err ? 0 : (badgeRow?.count || 0);
+            computeOverallProgress(uid, (progressErr, progressData) => {
+                if (progressErr) return res.status(500).json({ message: progressErr.message });
 
-                res.json({
-                    avgProgress,
-                    totalWatchTime: formattedTime,
-                    completedCourses,
-                    badges: badgeCount,
-                    courseCount,
+                db.get("SELECT COUNT(*) AS count FROM user_badges WHERE firebase_uid = ?", [uid], (err, badgeRow) => {
+                    const badgeCount = err ? 0 : (badgeRow?.count || 0);
+                    const overallProgress = progressData?.overallProgress ?? avgProgress;
+
+                    res.json({
+                        avgProgress: overallProgress,
+                        overallProgress,
+                        courseAvg: progressData?.courseAvg || 0,
+                        quizAvg: progressData?.quizAvg || 0,
+                        totalWatchTime: formattedTime,
+                        completedCourses,
+                        badges: badgeCount,
+                        courseCount,
+                    });
                 });
             });
         }
@@ -238,21 +292,39 @@ router.post("/:courseId/complete", (req, res) => {
         [firebase_uid, courseId],
         (err, row) => {
             if (err) return res.status(500).json({ message: err.message });
-            if (!row) return res.status(404).json({ message: "Aucune progression trouvée" });
+            db.get("SELECT course_type FROM courses WHERE id = ?", [courseId], (courseErr, courseRow) => {
+                if (courseErr) return res.status(500).json({ message: courseErr.message });
+                if (!courseRow) return res.status(404).json({ message: "Cours introuvable" });
 
-            if (row.progress < 90) {
-                return res.status(400).json({ success: false, message: "Vous devez avoir regardé au moins 90% du contenu." });
-            }
+                const courseType = String(courseRow.course_type || "video").toLowerCase();
+                const isVideo = courseType === "video";
 
-            db.run(
-                "UPDATE user_progress SET progress = 100 WHERE firebase_uid = ? AND course_id = ?",
-                [firebase_uid, courseId],
-                function (err) {
-                    if (err) return res.status(500).json({ message: err.message });
-                    awardBadges(firebase_uid);
-                    res.json({ success: true, progress: 100 });
+                if (isVideo) {
+                    if (!row) return res.status(404).json({ message: "Aucune progression trouvée" });
+                    if (Number(row.progress) < 90) {
+                        return res.status(400).json({ success: false, message: "Vous devez avoir regardé au moins 90% du contenu." });
+                    }
                 }
-            );
+
+                const sql = `
+                    INSERT INTO user_progress (firebase_uid, course_id, progress, watched_segments, last_watched_at)
+                    VALUES (?, ?, 100, ?, datetime('now'))
+                    ON CONFLICT(firebase_uid, course_id)
+                    DO UPDATE SET progress = 100,
+                                  watched_segments = COALESCE(excluded.watched_segments, user_progress.watched_segments),
+                                  last_watched_at = datetime('now')
+                `;
+
+                db.run(
+                    sql,
+                    [firebase_uid, courseId, JSON.stringify(row?.watched_segments || [])],
+                    function (err) {
+                        if (err) return res.status(500).json({ message: err.message });
+                        awardBadges(firebase_uid);
+                        res.json({ success: true, progress: 100 });
+                    }
+                );
+            });
         }
     );
 });

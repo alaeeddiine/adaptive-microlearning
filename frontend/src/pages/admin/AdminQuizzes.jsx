@@ -27,6 +27,229 @@ export default function AdminQuizzes() {
   });
   const [editingQuestionIndex, setEditingQuestionIndex] = useState(null);
 
+  const presetQuizzes = [
+    {
+      title: "Quiz SQL",
+      description: "Vérifiez vos bases sur les requêtes, jointures et agrégations SQL.",
+      categoryName: "SQL",
+      questions: [
+        {
+          question_text: "Que fait une requête SELECT en SQL ?",
+          option_a: "Supprime des données",
+          option_b: "Récupère des données",
+          option_c: "Modifie une table",
+          option_d: "Crée une base de données",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel mot-clé sert à filtrer les lignes ?",
+          option_a: "GROUP BY",
+          option_b: "ORDER BY",
+          option_c: "WHERE",
+          option_d: "JOIN",
+          correct_option: "C",
+        },
+        {
+          question_text: "Quelle jointure retourne toutes les lignes de la table de gauche et les correspondances de la table de droite ?",
+          option_a: "INNER JOIN",
+          option_b: "LEFT JOIN",
+          option_c: "RIGHT JOIN",
+          option_d: "FULL JOIN",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel mot-clé permet de compter les lignes ?",
+          option_a: "COUNT()",
+          option_b: "SUM()",
+          option_c: "AVG()",
+          option_d: "MAX()",
+          correct_option: "A",
+        },
+        {
+          question_text: "Quel mot-clé sert à regrouper des résultats ?",
+          option_a: "GROUP BY",
+          option_b: "ORDER BY",
+          option_c: "HAVING",
+          option_d: "DISTINCT",
+          correct_option: "A",
+        },
+        {
+          question_text: "Quelle requête met à jour des données existantes ?",
+          option_a: "INSERT",
+          option_b: "UPDATE",
+          option_c: "ALTER",
+          option_d: "SELECT",
+          correct_option: "B",
+        },
+      ],
+    },
+    {
+      title: "Quiz HTML/CSS",
+      description: "Testez vos connaissances sur la structure HTML et le style CSS.",
+      categoryName: "HTML/CSS",
+      questions: [
+        {
+          question_text: "Quel élément HTML sert à créer un lien ?",
+          option_a: "<link>",
+          option_b: "<a>",
+          option_c: "<href>",
+          option_d: "<url>",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel attribut HTML définit l'adresse d'un lien ?",
+          option_a: "src",
+          option_b: "href",
+          option_c: "alt",
+          option_d: "class",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quelle propriété CSS change la couleur du texte ?",
+          option_a: "background-color",
+          option_b: "font-size",
+          option_c: "color",
+          option_d: "text-align",
+          correct_option: "C",
+        },
+        {
+          question_text: "Quel sélecteur cible un élément avec un id \"menu\" ?",
+          option_a: ".menu",
+          option_b: "#menu",
+          option_c: "*menu",
+          option_d: "menu()",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel élément HTML est le plus adapté pour une liste non ordonnée ?",
+          option_a: "<ol>",
+          option_b: "<ul>",
+          option_c: "<li>",
+          option_d: "<section>",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quelle propriété CSS contrôle l'espace intérieur d'un élément ?",
+          option_a: "margin",
+          option_b: "padding",
+          option_c: "gap",
+          option_d: "border-spacing",
+          correct_option: "B",
+        },
+      ],
+    },
+    {
+      title: "Quiz Machine Learning",
+      description: "Révisez les notions essentielles du machine learning.",
+      categoryName: "Machine Learning",
+      questions: [
+        {
+          question_text: "Quel est le rôle principal du machine learning ?",
+          option_a: "Écrire du code HTML",
+          option_b: "Permettre à un modèle d'apprendre à partir de données",
+          option_c: "Compresser des fichiers",
+          option_d: "Dessiner des graphiques",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel type d'apprentissage utilise des données étiquetées ?",
+          option_a: "Apprentissage non supervisé",
+          option_b: "Apprentissage supervisé",
+          option_c: "Apprentissage par renforcement",
+          option_d: "Apprentissage fédéré",
+          correct_option: "B",
+        },
+        {
+          question_text: "Le surapprentissage correspond à quoi ?",
+          option_a: "Le modèle généralise trop bien",
+          option_b: "Le modèle mémorise trop les données d'entraînement",
+          option_c: "Le modèle n'utilise pas de données",
+          option_d: "Le modèle devient plus rapide",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel algorithme est souvent utilisé pour la classification ?",
+          option_a: "K-means",
+          option_b: "Régression logistique",
+          option_c: "PCA",
+          option_d: "TF-IDF",
+          correct_option: "B",
+        },
+        {
+          question_text: "Que mesure généralement l'accuracy ?",
+          option_a: "La vitesse d'exécution",
+          option_b: "La proportion de prédictions correctes",
+          option_c: "La taille du modèle",
+          option_d: "Le nombre de features",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel objectif vise la validation croisée ?",
+          option_a: "Choisir un langage de programmation",
+          option_b: "Évaluer la robustesse d'un modèle",
+          option_c: "Supprimer les valeurs manquantes",
+          option_d: "Créer des labels",
+          correct_option: "B",
+        },
+      ],
+    },
+    {
+      title: "Quiz Python",
+      description: "Évaluez vos connaissances sur les bases du langage Python.",
+      categoryName: "Python",
+      questions: [
+        {
+          question_text: "Quel symbole sert à commenter une ligne en Python ?",
+          option_a: "//",
+          option_b: "#",
+          option_c: "/* */",
+          option_d: "--",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel mot-clé définit une fonction ?",
+          option_a: "function",
+          option_b: "def",
+          option_c: "fun",
+          option_d: "lambda",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel type de donnée est immuable ?",
+          option_a: "list",
+          option_b: "dict",
+          option_c: "tuple",
+          option_d: "set",
+          correct_option: "C",
+        },
+        {
+          question_text: "Quelle structure sert à itérer sur une séquence ?",
+          option_a: "for",
+          option_b: "match",
+          option_c: "pass",
+          option_d: "yield",
+          correct_option: "A",
+        },
+        {
+          question_text: "Que retourne len([1, 2, 3]) ?",
+          option_a: "2",
+          option_b: "3",
+          option_c: "4",
+          option_d: "Erreur",
+          correct_option: "B",
+        },
+        {
+          question_text: "Quel module standard sert à manipuler des chemins de fichiers ?",
+          option_a: "math",
+          option_b: "os",
+          option_c: "pathlib",
+          option_d: "json",
+          correct_option: "C",
+        },
+      ],
+    },
+  ];
+
   // Load categories
   useEffect(() => {
     fetch("http://localhost:5000/api/admin/categories")
@@ -175,6 +398,53 @@ export default function AdminQuizzes() {
     fetchQuizzes(selectedCategory);
   };
 
+  const getCategoryByName = async (name) => {
+    const normalized = name.trim().toLowerCase();
+    const existing = categories.find((cat) => String(cat.name || "").trim().toLowerCase() === normalized);
+    if (existing) return existing;
+
+    const res = await fetch("http://localhost:5000/api/admin/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error(`Impossible de créer la catégorie ${name}`);
+    return res.json();
+  };
+
+  const seedPresetQuizzes = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/quiz");
+      const existingData = await res.json();
+      const existingQuizzes = Array.isArray(existingData) ? existingData : [];
+      const existingTitles = new Set(existingQuizzes.map((quiz) => String(quiz.title || "").trim().toLowerCase()));
+
+      for (const preset of presetQuizzes) {
+        if (existingTitles.has(preset.title.trim().toLowerCase())) continue;
+        const category = await getCategoryByName(preset.categoryName);
+        const createRes = await fetch("http://localhost:5000/api/quiz", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: preset.title,
+            description: preset.description,
+            category_id: category.id,
+            questions: preset.questions,
+          }),
+        });
+        if (!createRes.ok) {
+          const text = await createRes.text();
+          throw new Error(text || `Erreur lors de la création de ${preset.title}`);
+        }
+      }
+
+      fetchQuizzes(selectedCategory);
+      alert("Quiz prédéfinis ajoutés.");
+    } catch (err) {
+      alert(err.message || "Erreur lors de l'ajout des quiz.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -225,37 +495,56 @@ export default function AdminQuizzes() {
           <p className="text-sm">Créez un nouveau quiz ou changez de catégorie.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {quizzes.map((quiz) => (
-            <div
-              key={quiz.id}
-              className="bg-white rounded-[24px] p-5 shadow-sm border border-gray-100 hover-elevate"
-            >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-bold text-gray-900">{quiz.title}</h3>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
-                  {quiz.category_name || "Sans catégorie"}
-                </span>
-              </div>
-              <p className="text-sm text-gray-500 mb-4 line-clamp-2">{quiz.description || "Aucune description"}</p>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => openEditQuiz(quiz.id)}
-                  className="p-2 text-gray-400 hover:text-green-600 transition"
-                  title="Modifier"
-                >
-                  <FaEdit />
-                </button>
-                <button
-                  onClick={() => deleteQuiz(quiz.id)}
-                  className="p-2 text-gray-400 hover:text-red-600 transition"
-                  title="Supprimer"
-                >
-                  <FaTrash />
-                </button>
-              </div>
-            </div>
-          ))}
+        <div className="bg-white rounded-[24px] shadow-sm border border-gray-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm table-classic">
+              <thead>
+                <tr>
+                  <th className="px-4 py-3 text-left">Titre</th>
+                  <th className="px-4 py-3 text-left hidden md:table-cell">Description</th>
+                  <th className="px-4 py-3 text-left">Catégorie</th>
+                  <th className="px-4 py-3 text-left">Questions</th>
+                  <th className="px-4 py-3 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {quizzes.map((quiz) => (
+                  <tr key={quiz.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{quiz.title}</td>
+                    <td className="px-4 py-3 text-gray-500 hidden md:table-cell max-w-xs truncate">
+                      {quiz.description || "Aucune description"}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
+                        {quiz.category_name || "Sans catégorie"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      {quiz.question_count ?? quiz.questions_count ?? quiz.questions?.length ?? 0}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => openEditQuiz(quiz.id)}
+                          className="p-2 text-gray-400 hover:text-green-600 transition"
+                          title="Modifier"
+                        >
+                          <FaEdit />
+                        </button>
+                        <button
+                          onClick={() => deleteQuiz(quiz.id)}
+                          className="p-2 text-gray-400 hover:text-red-600 transition"
+                          title="Supprimer"
+                        >
+                          <FaTrash />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

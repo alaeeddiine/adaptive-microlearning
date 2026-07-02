@@ -4,10 +4,15 @@ import useAuth from "./useAuth";
 export default function useAutoSession() {
     const { currentUser } = useAuth();
     const sessionStartRef = useRef(Date.now());
-    const savedRef = useRef(false);   // prevent multiple saves
+    const savedContextRef = useRef(false);
+    const durationSentRef = useRef(false);
 
     useEffect(() => {
-        if (!currentUser || savedRef.current) return;   // already saved
+        if (!currentUser) return;
+
+        sessionStartRef.current = Date.now();
+        durationSentRef.current = false;
+        savedContextRef.current = false;
 
         const collectAndSave = async () => {
             // ---- Device ----
@@ -57,7 +62,8 @@ export default function useAutoSession() {
             }
 
             // ---- Save ONCE ----
-            savedRef.current = true;
+            if (savedContextRef.current) return;
+            savedContextRef.current = true;
             fetch("http://localhost:5000/api/session/auto", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -72,25 +78,40 @@ export default function useAutoSession() {
             }).catch(console.error);
         };
 
-        collectAndSave();
-
-        // ---- Duration update on exit ----
-        const handleBeforeUnload = () => {
-            const duration = (Date.now() - sessionStartRef.current) / 1000;
-            if (duration < 1) return; // ignore tiny sessions
+        const sendDuration = () => {
+            if (durationSentRef.current) return;
+            const duration = Math.round((Date.now() - sessionStartRef.current) / 1000);
+            if (duration < 1) return;
+            durationSentRef.current = true;
             fetch("http://localhost:5000/api/session/duration", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     firebase_uid: currentUser.uid,
-                    duration: Math.round(duration),
+                    duration,
                 }),
-                keepalive: true,   // important for sendBeacon-like behavior
+                keepalive: true,
+            }).catch(() => {
+                durationSentRef.current = false;
             });
         };
+
+        collectAndSave();
+
+        const handlePageHide = () => sendDuration();
+        const handleBeforeUnload = () => sendDuration();
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === "hidden") sendDuration();
+        };
+
+        window.addEventListener("pagehide", handlePageHide);
         window.addEventListener("beforeunload", handleBeforeUnload);
+        document.addEventListener("visibilitychange", handleVisibilityChange);
         return () => {
+            sendDuration();
+            window.removeEventListener("pagehide", handlePageHide);
             window.removeEventListener("beforeunload", handleBeforeUnload);
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
         };
     }, [currentUser]);
 }

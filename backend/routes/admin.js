@@ -434,9 +434,11 @@ router.get("/users/:uid", (req, res) => {
 
                                 // 6. ARCS responses (last 5)
                                 db.all(
-                                    `SELECT * FROM arcs_responses
-                                    WHERE firebase_uid = ?
-                                    ORDER BY created_at DESC LIMIT 5`,
+                                    `SELECT ar.*, c.title AS course_title
+                                    FROM arcs_responses ar
+                                    LEFT JOIN courses c ON c.id = ar.course_id
+                                    WHERE ar.firebase_uid = ?
+                                    ORDER BY ar.created_at DESC LIMIT 5`,
                                     [uid],
                                     (err, arcs) => {
                                         if (err) arcs = [];

@@ -145,12 +145,6 @@ export default function AdminUsers() {
                         >
                           <FaEye className="text-xs" /> Détails
                         </button>
-                        <button
-                          onClick={() => handleDelete(user.firebase_uid, user.name)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-semibold hover:bg-red-200 transition"
-                        >
-                          <FaTrash className="text-xs" /> Supprimer
-                        </button>
                       </div>
                     </td>
                   </tr>

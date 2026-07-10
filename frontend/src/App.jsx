@@ -29,8 +29,9 @@ import useAuth from "./hooks/useAuth";
 export default function App() {
   const { currentUser, userData } = useAuth();
   const isAdmin = userData?.role === "admin";
+  // Les admins ne sont jamais redirigés vers le questionnaire
   const needsQuestionnaire =
-    currentUser && userData && !userData.questionnaireComplete;
+    currentUser && userData && !userData.questionnaireComplete && !isAdmin;
 
   return (
     <Routes>
@@ -43,7 +44,7 @@ export default function App() {
         path="/questionnaire"
         element={
           <ProtectedRoute>
-            <Questionnaire />
+            {isAdmin ? <Navigate to="/admin" replace /> : <Questionnaire />}
           </ProtectedRoute>
         }
       />

@@ -17,7 +17,7 @@ import {
 import useAuth from "../../hooks/useAuth";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, isAdminEmail } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -32,7 +32,7 @@ export default function Login() {
     try {
       setLoading(true);
       await login(email, password);
-      navigate("/dashboard");
+      navigate(isAdminEmail(email) ? "/admin" : "/dashboard", { replace: true });
     } catch (err) {
       console.error(err);
       switch (err.code) {

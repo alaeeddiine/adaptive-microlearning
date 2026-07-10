@@ -5,16 +5,15 @@ import {
   FaCheckCircle,
   FaClock,
   FaTrophy,
-  FaPlay,
   FaMobileAlt,
   FaWifi,
   FaHeadphones,
   FaLightbulb,
-  FaQuestionCircle,
 } from "react-icons/fa";
 import Header from "../../components/Header";
 import useRealDashboardData from "../../hooks/useRealDashboardData";
 import useAuth from "../../hooks/useAuth";
+import { getContentTypeMeta } from "../../utils/contentTypes";
 
 // ---- Simple line chart (unchanged) ----
 const LineChart = ({ data }) => {
@@ -214,6 +213,9 @@ export default function Dashboard() {
   };
 
   const recentActivities = (data?.activities || []).slice(0, 3).map(mapActivity);
+  const recommendedType = data?.recommendedCourse
+    ? getContentTypeMeta(data.recommendedCourse)
+    : null;
   const recentQuizzes = (data?.activities || [])
     .filter((act) => act.event_type === "quiz_submitted")
     .slice(0, 3)
@@ -286,22 +288,19 @@ export default function Dashboard() {
               </div>
               {data?.recommendedCourse ? (
                 <div className="flex gap-3">
-                    <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-2xl bg-gradient-to-br from-gray-200 to-gray-100 flex items-center justify-center shrink-0">
-                        {data.recommendedCourse.type === "quiz" ? (
-                            <FaQuestionCircle className="text-purple-500 text-xl sm:text-2xl" />
-                        ) : (
-                            <FaPlay className="text-gray-500 text-xl sm:text-2xl" />
-                        )}
+                    <div className={`w-16 h-16 sm:w-24 sm:h-24 rounded-2xl flex items-center justify-center shrink-0 ${recommendedType.iconBox}`}>
+                        <recommendedType.Icon className="text-xl sm:text-2xl" />
                     </div>
                     <div className="flex-1">
-                        <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
-                            {data.recommendedCourse.type === "quiz" ? "Quiz" : data.recommendedCourse.category_name || "Cours"}
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${recommendedType.badge}`}>
+                            {recommendedType.label}
                         </span>
                         <h4 className="text-lg sm:text-xl font-bold text-gray-900 mt-1">{data.recommendedCourse.title}</h4>
                         <p className="text-xs sm:text-sm text-gray-500 mt-1 line-clamp-2">{data.recommendedCourse.description}</p>
                         <div className="flex flex-wrap gap-2 mt-2 text-xs text-gray-400">
-                            {data.recommendedCourse.type === "course" && (
+                            {recommendedType.type !== "quiz" && (
                                 <>
+                                    {data.recommendedCourse.category_name && <span><strong>CatÃ©gorie :</strong> {data.recommendedCourse.category_name}</span>}
                                     <span><strong>Difficulté :</strong> {data.recommendedCourse.level || "Intermédiaire"}</span>
                                     <span><strong>Durée :</strong> {data.recommendedCourse.duration || "—"}</span>
                                 </>

@@ -171,16 +171,6 @@ export default function AdminUserProgress() {
           </div>
       </div>
 
-      {/* ---- 4. Temps total regardé ---- */}
-      <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 mb-6">
-        <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-          <FaClock className="text-purple-600" /> Temps total regardé
-        </h3>
-        <p className="text-3xl font-extrabold text-gray-900">
-          {sessionSummary?.currentSessionDuration || user.total_site_time || "0m"}
-        </p>
-      </div>
-
       {/* ---- 5. Cours suivis ---- */}
       <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-100 mb-6">
         <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -438,7 +428,7 @@ export default function AdminUserProgress() {
           <div className="space-y-2">
             {arcs.map((arc, idx) => (
               <div key={idx} className="text-sm">
-                <p className="font-medium">Cours ID {arc.course_id} – {new Date(arc.created_at).toLocaleDateString("fr-FR")}</p>
+                <p className="font-medium">{arc.course_title || `Cours ID ${arc.course_id}`} - {new Date(arc.created_at).toLocaleDateString("fr-FR")}</p>
                 <div className="flex gap-4 mt-1 text-xs text-gray-600">
                   <span>Attention: {arc.attention}</span>
                   <span>Pertinence: {arc.relevance}</span>

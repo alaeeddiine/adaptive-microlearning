@@ -13,6 +13,23 @@ import { auth, db } from "../firebase/firebase";
 
 const AuthContext = createContext();
 const USER_FALLBACK_KEY = "learnsmart_user_fallback";
+const ADMIN_EMAILS = new Set(["admin.2026@gmail.com"]);
+
+function isAdminEmail(email) {
+  return ADMIN_EMAILS.has((email || "").trim().toLowerCase());
+}
+
+function withResolvedRole(data, email) {
+  if (isAdminEmail(email || data?.email)) {
+    return {
+      ...data,
+      role: "admin",
+      questionnaireComplete: true,
+    };
+  }
+
+  return data;
+}
 
 function saveFallbackUserData(data) {
   try {
@@ -74,24 +91,27 @@ export function AuthProvider({ children }) {
         if (!snap.exists()) {
           const fallback = loadFallbackUserData();
           setUserData(
-            fallback || {
-              uid: currentUser.uid,
-              name: currentUser.displayName || "",
-              email: currentUser.email || "",
-              questionnaireComplete: false,
-              ab_group: "A",
-            }
+            withResolvedRole(
+              fallback || {
+                uid: currentUser.uid,
+                name: currentUser.displayName || "",
+                email: currentUser.email || "",
+                questionnaireComplete: false,
+                ab_group: "A",
+              },
+              currentUser.email
+            )
           );
           setLoading(false);
           return;
         }
 
-        setUserData(snap.data());
+        setUserData(withResolvedRole(snap.data(), currentUser.email));
         setLoading(false);
       },
       () => {
         const fallback = loadFallbackUserData();
-        if (fallback) setUserData(fallback);
+        if (fallback) setUserData(withResolvedRole(fallback, currentUser.email));
         setLoading(false);
       }
     );
@@ -116,9 +136,10 @@ export function AuthProvider({ children }) {
       questionnaireComplete: false,
       ab_group: abGroup,
     };
+    const resolvedFallbackUser = withResolvedRole(fallbackUser, email);
 
-    saveFallbackUserData(fallbackUser);
-    setUserData(fallbackUser);
+    saveFallbackUserData(resolvedFallbackUser);
+    setUserData(resolvedFallbackUser);
 
     try {
       await setDoc(doc(db, "users", cred.user.uid), {
@@ -169,7 +190,8 @@ export function AuthProvider({ children }) {
     updateUserData({
       name,
       email,
-      questionnaireComplete: false,
+      questionnaireComplete: !isAdminEmail(email) ? false : true,
+      role: isAdminEmail(email) ? "admin" : undefined,
       ab_group: abGroup,
     });
 
@@ -189,10 +211,12 @@ export function AuthProvider({ children }) {
       value={{
         currentUser,
         userData,
+        loading,
         register,
         login,
         logout,
         updateUserData,
+        isAdminEmail,
       }}
     >
       {!loading && children}

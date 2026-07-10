@@ -316,6 +316,33 @@ export default function AdminQuizzes() {
     resetCurrentQuestion();
   };
 
+  const hasCompleteCurrentQuestion = () => {
+    const { question_text, option_a, option_b, option_c, option_d } = currentQuestion;
+    return [question_text, option_a, option_b, option_c, option_d].every((value) => String(value || "").trim());
+  };
+
+  const buildQuestionsForSubmit = () => {
+    const questions = [...quizForm.questions];
+    if (!hasCompleteCurrentQuestion()) return questions;
+
+    const question = {
+      question_text: currentQuestion.question_text,
+      option_a: currentQuestion.option_a,
+      option_b: currentQuestion.option_b,
+      option_c: currentQuestion.option_c,
+      option_d: currentQuestion.option_d,
+      correct_option: currentQuestion.correct_option,
+    };
+
+    if (editingQuestionIndex !== null) {
+      questions[editingQuestionIndex] = question;
+    } else {
+      questions.push(question);
+    }
+
+    return questions;
+  };
+
   const removeQuestion = (index) => {
     const updatedQuestions = quizForm.questions.filter((_, i) => i !== index);
     setQuizForm({ ...quizForm, questions: updatedQuestions });
@@ -362,11 +389,17 @@ export default function AdminQuizzes() {
       return;
     }
 
+    const questions = buildQuestionsForSubmit();
+    if (questions.length === 0) {
+      alert("Ajoutez au moins une question complÃ¨te.");
+      return;
+    }
+
     const payload = {
       title: quizForm.title,
       description: quizForm.description,
       category_id: quizForm.category_id,
-      questions: quizForm.questions,
+      questions,
     };
 
     const url = editingQuizId
@@ -380,7 +413,10 @@ export default function AdminQuizzes() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Erreur lors de la sauvegarde du quiz");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Erreur lors de la sauvegarde du quiz");
+      }
       setShowQuizModal(false);
       setEditingQuizId(null);
       setQuizForm({ title: "", description: "", category_id: "", questions: [] });

@@ -1,32 +1,38 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  FaLightbulb, FaPlay, FaStar, FaBrain, FaClock, FaFire,
-  FaQuestionCircle,
+  FaBrain,
+  FaClock,
+  FaFire,
+  FaLightbulb,
+  FaPlay,
+  FaStar,
 } from "react-icons/fa";
 import Header from "../../components/Header";
 import useAuth from "../../hooks/useAuth";
+import { getContentTypeMeta } from "../../utils/contentTypes";
 
-// ----- Réutilisable carte -----
 function RecommendationCard({ item, onStart }) {
+  const contentType = getContentTypeMeta(item);
+
   return (
     <div className="min-w-[240px] sm:min-w-[280px] bg-white rounded-[24px] p-5 shadow-sm border border-gray-100 hover-elevate flex flex-col">
       <div className="flex items-start justify-between mb-3">
-        <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center text-2xl">
-          {item.type === "quiz" ? <FaQuestionCircle className="text-purple-500" /> : (item.icon || "📘")}
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${contentType.iconBox}`}>
+          <contentType.Icon />
         </div>
-        <span className="text-xs font-medium px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full">
-          {item.type === "quiz" ? "Quiz" : item.category_name || "Cours"}
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${contentType.badge}`}>
+          {contentType.label}
         </span>
       </div>
       <h4 className="text-base font-bold text-gray-900 line-clamp-1">{item.title}</h4>
       <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.description}</p>
       <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
-        {item.type !== "quiz" && (
+        {contentType.type !== "quiz" && (
           <>
-            <span className="flex items-center gap-1"><FaBrain className="text-gray-400" />{item.level}</span>
-            <span className="flex items-center gap-1"><FaClock className="text-gray-400" />{item.duration}</span>
-            <span className="flex items-center gap-1 text-yellow-500"><FaStar className="text-yellow-400" />{item.rating || "—"}</span>
+            <span className="flex items-center gap-1"><FaBrain className="text-gray-400" />{item.level || "-"}</span>
+            <span className="flex items-center gap-1"><FaClock className="text-gray-400" />{item.duration || "-"}</span>
+            <span className="flex items-center gap-1 text-yellow-500"><FaStar className="text-yellow-400" />{item.rating || "-"}</span>
           </>
         )}
       </div>
@@ -34,7 +40,7 @@ function RecommendationCard({ item, onStart }) {
         onClick={() => onStart(item)}
         className="mt-4 w-full bg-purple-600 text-white py-2 rounded-xl text-xs font-semibold hover:bg-purple-700 transition shadow-sm flex items-center justify-center gap-1"
       >
-        <FaPlay className="text-xs" /> {item.type === "quiz" ? "Commencer le quiz" : "Démarrer"}
+        <FaPlay className="text-xs" /> {contentType.type === "quiz" ? "Commencer le quiz" : "Demarrer"}
       </button>
     </div>
   );
@@ -44,26 +50,31 @@ export default function Recommendations() {
   const navigate = useNavigate();
   const { currentUser, userData } = useAuth();
   const [recommendations, setRecommendations] = useState([]);
+  const [predictedType, setPredictedType] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const isGroupA = userData?.ab_group === "A";
 
   useEffect(() => {
     if (!currentUser) return;
+
+    setLoading(true);
     fetch("http://localhost:5000/api/recommendations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ firebase_uid: currentUser.uid }),
     })
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         setRecommendations(Array.isArray(data.courses) ? data.courses : []);
-        setLoading(false);
+        setPredictedType(data.predictedType || null);
       })
-      .catch(err => {
+      .catch((err) => {
         console.error("Erreur recommandations:", err);
-        setLoading(false);
-      });
+        setRecommendations([]);
+        setPredictedType(null);
+      })
+      .finally(() => setLoading(false));
   }, [currentUser]);
 
   const handleStart = (item) => {
@@ -74,10 +85,10 @@ export default function Recommendations() {
     }
   };
 
-  // Séparer les données pour les sections
-  const featured = recommendations.length > 0 ? recommendations[0] : null;
-  const trending = recommendations.length > 1 ? recommendations.slice(1, 6) : [];
-  const moreRecommendations = recommendations.length > 6 ? recommendations.slice(6) : [];
+  const featured = recommendations[0] || null;
+  const featuredType = featured ? getContentTypeMeta(featured) : null;
+  const trending = recommendations.slice(1, 6);
+  const moreRecommendations = recommendations.slice(6);
 
   return (
     <>
@@ -98,9 +109,14 @@ export default function Recommendations() {
         </h2>
         <p className="text-sm text-gray-500 mt-1">
           {isGroupA
-            ? "Contenus personnalisés selon votre profil d'apprentissage."
-            : "Découvrez l'ensemble des cours disponibles sur la plateforme."}
+            ? "Contenus personnalises selon votre profil d'apprentissage."
+            : "Decouvrez l'ensemble des cours disponibles sur la plateforme."}
         </p>
+        {isGroupA && predictedType && (
+          <span className="inline-flex mt-3 px-3 py-1 bg-purple-50 text-purple-700 text-xs font-semibold rounded-full">
+            Type recommande par l'IA : {predictedType}
+          </span>
+        )}
       </div>
 
       {loading ? (
@@ -113,7 +129,7 @@ export default function Recommendations() {
           <p className="font-medium">Aucune recommandation pour le moment.</p>
           <p className="text-sm">
             {isGroupA
-              ? "Complétez votre profil ou commencez des cours pour affiner vos suggestions."
+              ? "Completez votre profil ou commencez des cours pour affiner vos suggestions."
               : "Le catalogue est vide pour le moment. Revenez plus tard."}
           </p>
         </div>
@@ -124,24 +140,25 @@ export default function Recommendations() {
               <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-purple-600 to-indigo-700 p-6 sm:p-8 text-white shadow-lg hover-elevate">
                 <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-bl-full" />
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center text-4xl">
-                    {featured.type === "quiz" ? <FaQuestionCircle /> : (featured.icon || "📘")}
+                  <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center text-3xl">
+                    <featuredType.Icon />
                   </div>
                   <div className="flex-1">
                     <span className="inline-block px-2 py-0.5 bg-white/20 rounded-full text-xs font-medium mb-2">
-                      {isGroupA ? "Recommandé pour vous" : "Cours à la une"}
+                      {featuredType.label}
                     </span>
                     <h3 className="text-2xl sm:text-3xl font-bold">{featured.title}</h3>
                     <p className="mt-2 text-white/80 text-sm max-w-lg">{featured.description}</p>
                     <div className="flex flex-wrap items-center gap-3 mt-3 text-white/70 text-xs">
-                      {featured.type !== "quiz" ? (
+                      {featuredType.type !== "quiz" ? (
                         <>
-                          <span className="flex items-center gap-1"><FaBrain /> {featured.level}</span>
-                          <span className="flex items-center gap-1"><FaClock /> {featured.duration}</span>
-                          <span className="flex items-center gap-1 text-yellow-300"><FaStar /> {featured.rating || "—"}</span>
+                          {featured.category_name && <span>{featured.category_name}</span>}
+                          <span className="flex items-center gap-1"><FaBrain /> {featured.level || "-"}</span>
+                          <span className="flex items-center gap-1"><FaClock /> {featured.duration || "-"}</span>
+                          <span className="flex items-center gap-1 text-yellow-300"><FaStar /> {featured.rating || "-"}</span>
                         </>
                       ) : (
-                        <span className="flex items-center gap-1"><FaQuestionCircle /> Quiz interactif</span>
+                        <span className="flex items-center gap-1"><featuredType.Icon /> Quiz interactif</span>
                       )}
                     </div>
                   </div>
@@ -150,7 +167,7 @@ export default function Recommendations() {
                   onClick={() => handleStart(featured)}
                   className="mt-5 inline-flex items-center gap-2 bg-white text-purple-700 font-semibold py-2.5 px-5 rounded-xl text-sm shadow hover:bg-gray-100 transition"
                 >
-                  <FaPlay /> {featured.type === "quiz" ? "Commencer le quiz" : "Commencer"}
+                  <FaPlay /> {featuredType.type === "quiz" ? "Commencer le quiz" : "Commencer"}
                 </button>
               </div>
             </div>
@@ -160,12 +177,12 @@ export default function Recommendations() {
             <div className="mb-8">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
-                  <FaFire className="text-orange-500" /> Tendances
+                  <FaFire className="text-orange-500" /> Recommandes
                 </h3>
               </div>
               <div className="flex gap-4 overflow-x-auto scroll-hide pb-2">
                 {trending.map((item) => (
-                  <RecommendationCard key={item.id} item={item} onStart={handleStart} />
+                  <RecommendationCard key={`${item.type}-${item.id}`} item={item} onStart={handleStart} />
                 ))}
               </div>
             </div>
@@ -180,7 +197,7 @@ export default function Recommendations() {
               </div>
               <div className="flex gap-4 overflow-x-auto scroll-hide pb-2">
                 {moreRecommendations.map((item) => (
-                  <RecommendationCard key={item.id} item={item} onStart={handleStart} />
+                  <RecommendationCard key={`${item.type}-${item.id}`} item={item} onStart={handleStart} />
                 ))}
               </div>
             </div>

@@ -34,14 +34,18 @@ export default function QuizPlayer() {
 
   useEffect(() => {
     fetch(`http://localhost:5000/api/quiz/${id}/take`)
-      .then((res) => res.json())
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "Impossible de charger le quiz.");
+        return data;
+      })
       .then((data) => {
-        setQuiz(data.quiz);
+        setQuiz(data.quiz || null);
         setQuestions(data.questions || []);
         setLoading(false);
       })
-      .catch(() => {
-        setError("Impossible de charger le quiz.");
+      .catch((err) => {
+        setError(err.message || "Impossible de charger le quiz.");
         setLoading(false);
       });
   }, [id]);
@@ -199,7 +203,22 @@ export default function QuizPlayer() {
   }
 
   const currentQuestion = questions[currentIndex];
-  if (!currentQuestion) return null;
+  if (!currentQuestion) {
+    return (
+      <div className="min-h-screen bg-white">
+        <Header />
+        <div className="max-w-lg mx-auto p-4 sm:p-6 mt-6">
+          <button onClick={() => navigate("/quiz")} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4">
+            <FaArrowLeft /> <span className="text-sm font-medium">Retour</span>
+          </button>
+          <div className="bg-white rounded-2xl p-6 shadow-sm border text-center">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">{quiz?.title || "Quiz"}</h2>
+            <p className="text-sm text-gray-500">Ce quiz ne contient aucune question.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">

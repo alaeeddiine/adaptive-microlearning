@@ -47,7 +47,13 @@ export default function Header() {
     navigate("/login");
   };
 
-  const displayName = userData?.name || currentUser?.displayName || "Ahmed";
+  // ---------- Détection admin ----------
+  const isAdmin = userData?.role === "admin"; // À ADAPTER selon ton modèle
+  // -------------------------------------
+
+  const displayName = isAdmin
+    ? "Admin"
+    : userData?.name || currentUser?.displayName || "Ahmed";
   const displayEmail = userData?.email || currentUser?.email || "ahmed@example.com";
   const avatarLetter = (displayName?.[0] || "A").toUpperCase();
 
@@ -159,7 +165,7 @@ export default function Header() {
             </div>
             <div className="hidden sm:block text-left">
               <p className="text-sm font-semibold text-gray-900">{displayName}</p>
-              <p className="text-xs text-gray-500">Apprenant</p>
+              <p className="text-xs text-gray-500">{isAdmin ? "Admin" : "Apprenant"}</p>
             </div>
             <FaChevronDown className={`text-gray-400 text-xs transition-transform ${showProfile ? "rotate-180" : ""}`} />
           </button>

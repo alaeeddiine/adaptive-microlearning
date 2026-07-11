@@ -246,17 +246,29 @@ router.post("/", async (req, res) => {
                 : {}),
         };
 
-        const flaskResponse = await fetch("http://localhost:5001/predict", {
+        const flaskResponse = await fetch(
+        process.env.ML_URL || "http://ml:5001/predict",
+        {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+            },
             body: JSON.stringify({ features }),
+        }
+    );
+
+    const result = await flaskResponse.json();
+
+    if (!flaskResponse.ok) {
+        console.error(result);
+        return res.status(500).json({
+            message: "Erreur du service ML",
         });
+    }
 
-        const result = await flaskResponse.json();
-        if (result.error) return res.json({ predictedType: null, courses: [] });
+    const recommendations = await fetchRecommendedContent(result.recommendations);
 
-        const recommendations = await fetchRecommendedContent(result.recommendations);
-        return res.json(recommendations);
+    return res.json(recommendations);
     } catch (err) {
         console.error("Flask error:", err);
         return res.status(500).json({ message: "Erreur du service de recommandation" });

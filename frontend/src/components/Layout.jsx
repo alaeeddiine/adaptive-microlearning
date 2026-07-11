@@ -1,5 +1,5 @@
 import { Outlet } from "react-router-dom";
-import { Sidebar, BottomNav } from "./sidebar";
+import { Sidebar, BottomNav } from "./Sidebar";
 import useAutoSession from "../hooks/useAutoSession";
 
 export default function Layout() {

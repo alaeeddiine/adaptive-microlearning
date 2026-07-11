@@ -128,7 +128,7 @@ router.post("/", async (req, res) => {
         };
 
         try {
-            const flaskResponse = await fetch("http://localhost:5001/predict", {
+            fetch(process.env.ML_URL || "http://localhost:5001/predict", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ features }),

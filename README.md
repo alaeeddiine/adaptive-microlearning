@@ -76,7 +76,7 @@ Les fois suivantes :
 docker compose up
 ```
 
-Patientez quelques instants pendant le démarrage des services.
+Patientez quelques instants pendant le démarrage des services. ( ça peut prendre du temps depends a votre connexion ) 
 
 ---
 
@@ -87,7 +87,10 @@ Une fois les services démarrés, ouvrez votre navigateur :
 ```
 http://localhost:5173
 ```
+pour acceder au tableau de bord admin : 
 
+Email: admin.2026@gmail.com
+mots de passe: admin.2026
 ---
 
 # Architecture

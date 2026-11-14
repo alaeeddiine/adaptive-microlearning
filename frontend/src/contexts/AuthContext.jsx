@@ -59,9 +59,15 @@ export function AuthProvider({ children }) {
   const [persistenceReady, setPersistenceReady] = useState(false);
 
   useEffect(() => {
-    setPersistence(auth, browserSessionPersistence).then(() => {
-      setPersistenceReady(true);
-    });
+    // Si setPersistence échoue, ne jamais bloquer l'app sur un écran blanc :
+    // on continue quand même (persistence par défaut de Firebase).
+    setPersistence(auth, browserSessionPersistence)
+      .then(() => {
+        setPersistenceReady(true);
+      })
+      .catch(() => {
+        setPersistenceReady(true);
+      });
   }, []);
 
   useEffect(() => {

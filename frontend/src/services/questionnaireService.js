@@ -1,4 +1,4 @@
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase/firebase";
 
 export async function saveQuestionnaire(data) {
@@ -7,10 +7,16 @@ export async function saveQuestionnaire(data) {
 
   try {
     const ref = doc(db, "users", user.uid);
-    await updateDoc(ref, {
-      questionnaireComplete: true,
-      questionnaire: data,
-    });
+    // setDoc + merge : crée le document s'il n'existe pas encore
+    // (updateDoc échouait silencieusement dans ce cas, réponses perdues).
+    await setDoc(
+      ref,
+      {
+        questionnaireComplete: true,
+        questionnaire: data,
+      },
+      { merge: true }
+    );
   } catch (error) {
     console.warn("Firestore questionnaire skipped:", error?.message || error);
   }

@@ -58,15 +58,23 @@ export default function Questionnaire() {
               const finalAnswers = answersRef.current;
               await saveQuestionnaire(finalAnswers);   // Sauvegarde Firestore
 
-              // 🔥 Synchronisation SQLite
-              await fetch("http://localhost:5000/api/users/questionnaire", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                      firebase_uid: currentUser.uid,   // il faut récupérer currentUser depuis le contexte
-                      ...finalAnswers,
-                  }),
-              });
+              // 🔥 Synchronisation SQLite (backend local) — optionnelle :
+              // ne doit JAMAIS bloquer la soumission quand le backend n'est
+              // pas déployé (ex. site live sur Firebase Hosting).
+              try {
+                  if (currentUser?.uid) {
+                      await fetch("http://localhost:5000/api/users/questionnaire", {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                              firebase_uid: currentUser.uid,
+                              ...finalAnswers,
+                          }),
+                      });
+                  }
+              } catch (syncErr) {
+                  console.warn("Backend sync skipped (backend non disponible):", syncErr);
+              }
 
               updateUserData({
                   questionnaireComplete: true,
